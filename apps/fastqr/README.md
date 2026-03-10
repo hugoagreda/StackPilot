@@ -3,6 +3,30 @@
 FastQR is a micro-SaaS for restaurant table interaction through QR codes.
 The product focus is customer engagement and actionable analytics on dishes, not just a digital menu.
 
+## Current Status (March 2026)
+
+Implementation status by layer:
+- Backend API: in progress (core public flow implemented)
+- Database: in progress (schema + migration + seed available)
+- Frontend: not started (README only)
+- End-to-end flow: partially available (API side)
+
+What is working today:
+- Health endpoint
+- Public menu by QR token
+- Public vote endpoint
+- Public feedback endpoint
+- Public daily ranking endpoint
+- Dashboard overview endpoint (currently without authentication)
+- Backend test checkpoint suite
+
+What is missing for MVP completion:
+- Frontend app for customer and manager flows
+- Dashboard authentication (login/token protection)
+- Table QR generation endpoint
+- Dashboard CRUD for dishes and table management
+- Stronger integration tests with a real test database
+
 ## Role
 This repository is implemented with a focus on:
 - SaaS product architecture
@@ -90,23 +114,20 @@ Recommended minimum fields:
 ## Backend API Design (MVP)
 Suggested base path: /api/v1
 
-Public endpoints:
-- GET /public/restaurants/{slug}/menu
-- GET /public/restaurants/{slug}/tables/{qr_token}
-- POST /public/restaurants/{slug}/votes
-- POST /public/restaurants/{slug}/feedback
-- GET /public/restaurants/{slug}/rankings/daily
-
-Dashboard endpoints (auth):
-- GET /dashboard/restaurants/{restaurant_id}/overview
-- GET /dashboard/restaurants/{restaurant_id}/analytics/basic
-- GET /dashboard/restaurants/{restaurant_id}/dishes/ranking/daily
-- POST /dashboard/restaurants/{restaurant_id}/tables
-- POST /dashboard/restaurants/{restaurant_id}/tables/{table_id}/qr
-- CRUD /dashboard/restaurants/{restaurant_id}/dishes
-
-Health endpoint:
+Implemented endpoints:
 - GET /health
+- GET /public/{qr_token}/menu
+- POST /public/{qr_token}/votes
+- POST /public/{qr_token}/feedback
+- GET /public/{qr_token}/ranking/today
+- GET /dashboard/overview?restaurant_slug={slug}
+
+Planned dashboard/auth endpoints (next iterations):
+- POST /dashboard/login
+- GET /dashboard/{restaurant_slug}/dishes/ranking/today
+- GET /dashboard/{restaurant_slug}/feedback/recent
+- POST /dashboard/{restaurant_slug}/tables/{table_id}/qr
+- CRUD /dashboard/{restaurant_slug}/dishes
 
 ## Minimal Frontend Structure
 frontend/
@@ -117,6 +138,10 @@ frontend/
 - components/
 - lib/api-client.ts
 - styles/
+
+Current frontend note:
+- This structure is the target architecture.
+- The frontend implementation has not been scaffolded yet.
 
 MVP frontend goal:
 - Fast flow for customers scanning a QR
@@ -157,6 +182,23 @@ MVP frontend goal:
 7. Release MVP
 - Deploy to staging environment
 - Functional verification with 1 pilot restaurant
+
+## Immediate Next Steps (Execution Order)
+1. Harden backend dashboard layer
+- Add minimal authentication guard for dashboard routes
+- Add detail endpoints for ranking and recent feedback
+
+2. Start frontend scaffold
+- Create React or Next.js project in `frontend/`
+- Add API client and env wiring (`NEXT_PUBLIC_API_URL`)
+
+3. Build first end-to-end vertical slice
+- Customer: token -> menu -> vote -> feedback
+- Manager: dashboard overview + daily ranking + recent feedback
+
+4. Stabilize with tests
+- Expand backend tests for auth and conflict-safe voting
+- Add one integration test path with seeded database
 
 ## Constraints
 - Focus on MVP only
