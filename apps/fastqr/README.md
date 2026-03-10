@@ -58,8 +58,8 @@ Modular backend architecture:
 - tests: MVP tests
 
 Python environment note:
-- Current virtual environment in backend/venv (based on the current project decision)
-- Python dependencies in backend/requirements.txt
+- Current virtual environment in workspace root /.venv
+- Python dependencies in /requirements.txt (workspace root)
 
 ## Database Schema (MVP)
 Main entities:

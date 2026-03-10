@@ -10,12 +10,18 @@ coverage/
 .env
 .env.*
 !.env.example
+apps/**/.env.example
+/.venv/
 
-# Python virtual environments (per app)
-apps/*/venv/
+# Python virtual environments
+venv/
 
-# Legacy backend-local virtual environments (do not use)
-apps/*/backend/.venv/
+# Python cache and tooling
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # Logs
 *.log
