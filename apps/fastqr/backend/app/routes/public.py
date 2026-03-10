@@ -31,7 +31,10 @@ def vote_dish(qr_token: str, payload: VoteRequest, db: Session = Depends(get_db)
 
 @router.post("/{qr_token}/feedback")
 def submit_feedback(qr_token: str, payload: FeedbackRequest, db: Session = Depends(get_db)) -> dict:
-    result = create_feedback(db, qr_token, payload.rating, payload.comment, payload.session_id)
+    try:
+        result = create_feedback(db, qr_token, payload.rating, payload.comment, payload.session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if result is None:
         raise HTTPException(status_code=404, detail="QR token not found")
     return result

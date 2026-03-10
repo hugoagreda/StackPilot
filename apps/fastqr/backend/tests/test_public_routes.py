@@ -111,6 +111,21 @@ def test_feedback_qr_not_found(client, monkeypatch):
     assert response.json()["detail"] == "QR token not found"
 
 
+def test_feedback_invalid_session_id(client, monkeypatch):
+    def _fake_create_feedback(_db, _qr_token, _rating, _comment, _session_id):
+        raise ValueError("Invalid session_id")
+
+    monkeypatch.setattr(public_routes, "create_feedback", _fake_create_feedback)
+
+    response = client.post(
+        "/api/v1/public/token123/feedback",
+        json={"rating": 5, "comment": "ok", "session_id": "   "},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Invalid session_id"
+
+
 def test_ranking_ok(client, monkeypatch):
     monkeypatch.setattr(
         public_routes,

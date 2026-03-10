@@ -102,16 +102,6 @@ stackpilot/
 	.git/
 ```
 
-## Quick Start
-1. Copy available environment templates:
-	 - `.env.example` -> `.env`
-	 - `apps/fastqr/.env.example` -> `apps/fastqr/.env`
-	 - `apps/template-app/.env.example` -> `apps/template-app/.env`
-2. Start shared infrastructure:
-	 - `docker compose up -d`
-3. For each Python-based app, create and use its app-root virtual environment (`apps/<product>/venv`).
-4. Build product and dashboard services from their own folders.
-
 ### Python App Environment Convention
 For each app under `apps/`, use one virtual environment at app root:
 
@@ -147,3 +137,4 @@ pip install -r backend/requirements.txt
 3. Connect shared services from `core/`.
 4. Register product in the dashboard.
 5. Configure deployment under `infra/deployment`.
+

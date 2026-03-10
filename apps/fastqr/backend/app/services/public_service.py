@@ -13,6 +13,20 @@ from app.models.table import Table
 from app.models.vote import Vote
 
 
+def _normalize_session_id(session_id: str) -> str:
+    normalized = session_id.strip()
+    if not normalized:
+        raise ValueError("Invalid session_id")
+    return normalized
+
+
+def _normalize_comment(comment: str | None) -> str | None:
+    if comment is None:
+        return None
+    normalized = comment.strip()
+    return normalized or None
+
+
 def get_table_and_restaurant_by_qr(db: Session, qr_token: str) -> tuple[Table, Restaurant] | None:
     stmt = (
         select(Table, Restaurant)
@@ -81,6 +95,7 @@ def create_vote(db: Session, qr_token: str, dish_id: str, session_id: str) -> di
         return None
 
     table, restaurant = table_restaurant
+    normalized_session_id = _normalize_session_id(session_id)
 
     try:
         dish_uuid = uuid.UUID(dish_id)
@@ -98,7 +113,7 @@ def create_vote(db: Session, qr_token: str, dish_id: str, session_id: str) -> di
     existing_stmt = select(Vote).where(
         Vote.restaurant_id == restaurant.id,
         Vote.dish_id == dish.id,
-        Vote.session_id == session_id,
+        Vote.session_id == normalized_session_id,
         Vote.vote_date == date.today(),
     )
     existing_vote = db.execute(existing_stmt).scalar_one_or_none()
@@ -109,7 +124,7 @@ def create_vote(db: Session, qr_token: str, dish_id: str, session_id: str) -> di
         restaurant_id=restaurant.id,
         table_id=table.id,
         dish_id=dish.id,
-        session_id=session_id,
+        session_id=normalized_session_id,
         vote_date=date.today(),
     )
     db.add(vote)
@@ -124,13 +139,15 @@ def create_feedback(db: Session, qr_token: str, rating: int, comment: str | None
         return None
 
     table, restaurant = table_restaurant
+    normalized_session_id = _normalize_session_id(session_id)
+    normalized_comment = _normalize_comment(comment)
 
     feedback = Feedback(
         restaurant_id=restaurant.id,
         table_id=table.id,
         rating=rating,
-        comment=comment,
-        session_id=session_id,
+        comment=normalized_comment,
+        session_id=normalized_session_id,
     )
     db.add(feedback)
     db.commit()
