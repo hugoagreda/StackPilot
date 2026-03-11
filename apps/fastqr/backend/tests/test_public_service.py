@@ -39,7 +39,7 @@ def test_create_feedback_trims_comment_and_session(monkeypatch):
     assert len(fake_db.added) == 1
     saved_feedback = fake_db.added[0]
     assert saved_feedback.comment == "Great food"
-    assert saved_feedback.session_id == "session-a"
+    assert saved_feedback.session_token == "session-a"
 
 
 def test_create_feedback_converts_blank_comment_to_none(monkeypatch):

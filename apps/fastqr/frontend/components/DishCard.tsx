@@ -1,6 +1,5 @@
 'use client'
 
-import Image from 'next/image'
 import { VoteButton } from './VoteButton'
 
 export interface DishCardProps {
@@ -24,34 +23,87 @@ export function DishCard({
   votingDisabled,
   onVote,
 }: DishCardProps) {
+
   const price = (price_cents / 100).toLocaleString('es-ES', {
     style: 'currency',
     currency: 'EUR',
   })
 
   return (
-    <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100">
+    <article
+      className="card"
+      style={{
+        padding: 16,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+      }}
+    >
+
       {image_url && (
-        <div className="relative w-full h-40">
-          <Image
-            src={image_url}
-            alt={name}
-            fill
-            className="object-cover"
-            sizes="(max-width: 640px) 100vw, 50vw"
-          />
-        </div>
+        <img
+          src={image_url}
+          alt={name}
+          style={{
+            width: '100%',
+            height: 160,
+            objectFit: 'cover',
+            borderRadius: 10,
+            marginBottom: 4,
+          }}
+        />
       )}
-      <div className="p-4">
-        <div className="flex items-start justify-between gap-3">
-          <h3 className="font-semibold text-gray-900 leading-snug">{name}</h3>
-          <span className="shrink-0 text-sm font-semibold text-gray-700">{price}</span>
-        </div>
-        {description && (
-          <p className="mt-1 text-sm text-gray-500 line-clamp-2">{description}</p>
-        )}
-        <VoteButton voted={voted} disabled={votingDisabled} onClick={() => onVote(id)} />
+
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'start',
+          gap: 10,
+        }}
+      >
+        <h3
+          style={{
+            margin: 0,
+            fontSize: 17,
+            fontWeight: 600,
+          }}
+        >
+          {name}
+        </h3>
+
+        <strong
+          style={{
+            fontSize: 15,
+            color: 'var(--primary)',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {price}
+        </strong>
       </div>
-    </div>
+
+      {description && (
+        <p
+          className="muted"
+          style={{
+            margin: 0,
+            fontSize: 14,
+            lineHeight: 1.4,
+          }}
+        >
+          {description}
+        </p>
+      )}
+
+      <div style={{ marginTop: 6 }}>
+        <VoteButton
+          voted={voted}
+          disabled={votingDisabled}
+          onClick={() => onVote(id)}
+        />
+      </div>
+
+    </article>
   )
 }

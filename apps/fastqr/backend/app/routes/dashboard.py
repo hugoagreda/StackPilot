@@ -133,6 +133,8 @@ def get_restaurant_tables(
             restaurant_id=str(table.restaurant_id),
             code=table.code,
             qr_token=table.qr_token,
+            is_enabled=table.is_enabled,
+            scan_cooldown_minutes=table.scan_cooldown_minutes,
         )
         for table in tables
     ]
@@ -156,6 +158,8 @@ def post_restaurant_table(
         restaurant_id=str(table.restaurant_id),
         code=table.code,
         qr_token=table.qr_token,
+        is_enabled=table.is_enabled,
+        scan_cooldown_minutes=table.scan_cooldown_minutes,
     )
 
 

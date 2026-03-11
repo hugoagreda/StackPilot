@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { api, type Category, type Dish } from '@/lib/api'
+import { fastqrApi, type Category, type Dish } from '@/lib/api'
 
 interface DishFormState {
   name: string
@@ -37,12 +37,12 @@ export default function DashboardDishesPage() {
     const rid = localStorage.getItem('fastqr_restaurant_id')
     setRestaurantId(rid)
     if (!rid) {
-      setError('Restaurante no encontrado')
+      setError('Configura restaurant_id en /dashboard')
       setLoading(false)
       return
     }
 
-    Promise.all([api.getCategories(rid), api.getDishes(rid)])
+    Promise.all([fastqrApi.getCategories(rid), fastqrApi.getDishes(rid)])
       .then(([cats, dishList]) => {
         setCategories(cats)
         setDishes(dishList)
@@ -67,34 +67,11 @@ export default function DashboardDishesPage() {
   const refresh = async () => {
     if (!restaurantId) return
     const [cats, dishList] = await Promise.all([
-      api.getCategories(restaurantId),
-      api.getDishes(restaurantId),
+      fastqrApi.getCategories(restaurantId),
+      fastqrApi.getDishes(restaurantId),
     ])
     setCategories(cats)
     setDishes(dishList)
-  }
-
-  const handleCreateCategory = async () => {
-    if (!restaurantId || !newCategoryName.trim()) return
-    try {
-      await api.createCategory(restaurantId, newCategoryName.trim())
-      setNewCategoryName('')
-      await refresh()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al crear categoría')
-    }
-  }
-
-  const startEditDish = (dish: Dish) => {
-    setEditingDishId(dish.id)
-    setForm({
-      name: dish.name,
-      description: dish.description ?? '',
-      price: (dish.price_cents / 100).toString(),
-      category_id: dish.category_id,
-      image_url: dish.image_url ?? '',
-      is_available: dish.is_available,
-    })
   }
 
   const resetForm = () => {
@@ -126,9 +103,9 @@ export default function DashboardDishesPage() {
 
     try {
       if (editingDishId) {
-        await api.updateDish(restaurantId, editingDishId, payload)
+        await fastqrApi.updateDish(restaurantId, editingDishId, payload)
       } else {
-        await api.createDish(restaurantId, payload)
+        await fastqrApi.createDish(restaurantId, payload)
       }
       await refresh()
       resetForm()
@@ -142,7 +119,7 @@ export default function DashboardDishesPage() {
   const toggleAvailability = async (dish: Dish) => {
     if (!restaurantId) return
     try {
-      await api.updateDish(restaurantId, dish.id, { is_available: !dish.is_available })
+      await fastqrApi.updateDish(restaurantId, dish.id, { is_available: !dish.is_available })
       await refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo actualizar')
@@ -150,164 +127,81 @@ export default function DashboardDishesPage() {
   }
 
   return (
-    <div className="space-y-8">
-      <header>
-        <h1 className="text-2xl font-bold text-gray-900">Carta</h1>
-        <p className="text-sm text-gray-500 mt-1">Gestiona tus platos por categoría.</p>
-      </header>
+    <section className="stack-lg">
+  {categories.map((category) => {
+    const categoryDishes = dishesByCategory.get(category.id) ?? []
 
-      {error && <p className="text-sm text-red-500">{error}</p>}
-      {loading && <p className="text-sm text-gray-400">Cargando...</p>}
+    return (
+      <article key={category.id} className="card">
+        <header style={{ marginBottom: 12 }}>
+          <h3 style={{ margin: 0, fontSize: 18 }}>
+            {category.name}
+          </h3>
+        </header>
 
-      {!loading && (
-        <>
-          <section className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
-            <h2 className="font-semibold mb-3">Nueva categoría</h2>
-            <div className="flex flex-col sm:flex-row gap-2">
-              <input
-                value={newCategoryName}
-                onChange={(e) => setNewCategoryName(e.target.value)}
-                placeholder="Ej: Entrantes"
-                className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm"
-              />
-              <button
-                onClick={handleCreateCategory}
-                className="px-4 py-2 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800"
+        {categoryDishes.length === 0 ? (
+          <p className="muted">No hay platos en esta categoria.</p>
+        ) : (
+          <div className="stack">
+            {categoryDishes.map((dish) => (
+              <div
+                key={dish.id}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '10px 0',
+                  borderTop: '1px solid var(--line)',
+                }}
               >
-                Crear categoría
-              </button>
-            </div>
-          </section>
+                <div>
+                  <p style={{ margin: 0, fontWeight: 600 }}>
+                    {dish.name}
+                  </p>
 
-          <section className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
-            <h2 className="font-semibold mb-3">{editingDishId ? 'Editar plato' : 'Nuevo plato'}</h2>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <input
-                value={form.name}
-                onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-                placeholder="Nombre del plato"
-                className="rounded-lg border border-gray-200 px-3 py-2 text-sm"
-              />
-
-              <input
-                value={form.price}
-                onChange={(e) => setForm((p) => ({ ...p, price: e.target.value }))}
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="Precio"
-                className="rounded-lg border border-gray-200 px-3 py-2 text-sm"
-              />
-
-              <select
-                value={form.category_id}
-                onChange={(e) => setForm((p) => ({ ...p, category_id: e.target.value }))}
-                className="rounded-lg border border-gray-200 px-3 py-2 text-sm"
-              >
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-
-              <input
-                value={form.image_url}
-                onChange={(e) => setForm((p) => ({ ...p, image_url: e.target.value }))}
-                placeholder="URL imagen (opcional)"
-                className="rounded-lg border border-gray-200 px-3 py-2 text-sm"
-              />
-
-              <textarea
-                value={form.description}
-                onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
-                placeholder="Descripción"
-                rows={3}
-                className="md:col-span-2 rounded-lg border border-gray-200 px-3 py-2 text-sm resize-none"
-              />
-
-              <label className="md:col-span-2 flex items-center gap-2 text-sm text-gray-700">
-                <input
-                  type="checkbox"
-                  checked={form.is_available}
-                  onChange={(e) => setForm((p) => ({ ...p, is_available: e.target.checked }))}
-                />
-                Disponible para clientes
-              </label>
-            </div>
-
-            <div className="mt-4 flex gap-2">
-              <button
-                onClick={handleSaveDish}
-                disabled={saving}
-                className="px-4 py-2 rounded-lg bg-orange-500 text-white text-sm font-semibold hover:bg-orange-600 disabled:opacity-50"
-              >
-                {saving ? 'Guardando...' : editingDishId ? 'Guardar cambios' : 'Crear plato'}
-              </button>
-              {editingDishId && (
-                <button
-                  onClick={resetForm}
-                  className="px-4 py-2 rounded-lg border border-gray-200 text-sm"
-                >
-                  Cancelar
-                </button>
-              )}
-            </div>
-          </section>
-
-          <section className="space-y-6">
-            {categories.map((category) => {
-              const categoryDishes = dishesByCategory.get(category.id) ?? []
-              return (
-                <div key={category.id} className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
-                  <h3 className="font-semibold text-gray-900 mb-3">{category.name}</h3>
-                  {categoryDishes.length === 0 ? (
-                    <p className="text-sm text-gray-400">No hay platos en esta categoría.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {categoryDishes.map((dish) => (
-                        <div
-                          key={dish.id}
-                          className="flex items-center justify-between gap-3 rounded-xl border border-gray-100 p-3"
-                        >
-                          <div>
-                            <p className="font-medium text-gray-900">{dish.name}</p>
-                            <p className="text-sm text-gray-500">
-                              {(dish.price_cents / 100).toLocaleString('es-ES', {
-                                style: 'currency',
-                                currency: 'EUR',
-                              })}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => startEditDish(dish)}
-                              className="px-3 py-1.5 rounded-lg text-sm border border-gray-200"
-                            >
-                              Editar
-                            </button>
-                            <button
-                              onClick={() => toggleAvailability(dish)}
-                              className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
-                                dish.is_available
-                                  ? 'bg-green-50 text-green-700 border border-green-200'
-                                  : 'bg-gray-100 text-gray-500 border border-gray-200'
-                              }`}
-                            >
-                              {dish.is_available ? 'Disponible' : 'No disponible'}
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+                    {(dish.price_cents / 100).toLocaleString('es-ES', {
+                      style: 'currency',
+                      currency: 'EUR',
+                    })}
+                  </p>
                 </div>
-              )
-            })}
-          </section>
-        </>
-      )}
-    </div>
+
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    onClick={() => {
+                      setEditingDishId(dish.id)
+
+                      setForm({
+                        name: dish.name,
+                        description: dish.description ?? '',
+                        price: (dish.price_cents / 100).toString(),
+                        category_id: dish.category_id,
+                        image_url: dish.image_url ?? '',
+                        is_available: dish.is_available,
+                      })
+                    }}
+                    className="btn btn-soft"
+                  >
+                    Editar
+                  </button>
+
+                  <button
+                    onClick={() => toggleAvailability(dish)}
+                    className={`btn ${
+                      dish.is_available ? 'btn-danger' : 'btn-soft'
+                    }`}
+                  >
+                    {dish.is_available ? 'Desactivar' : 'Activar'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </article>
+    )
+  })}
+</section>
   )
 }

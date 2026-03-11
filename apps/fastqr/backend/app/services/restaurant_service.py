@@ -28,18 +28,11 @@ def get_table_and_restaurant_by_qr(db: Session, qr_token: str) -> tuple[Table, R
 
 
 def get_restaurant_feature_settings(db: Session, restaurant_id: uuid.UUID) -> dict:
-    stmt = select(RestaurantSetting).where(RestaurantSetting.restaurant_id == restaurant_id)
-    setting = db.execute(stmt).scalar_one_or_none()
-    if setting is None:
-        return {
-            "allow_menu": True,
-            "allow_votes": True,
-            "allow_feedback": True,
-            "allow_games": True,
-        }
+    # El esquema actual de restaurant_settings no incluye columnas allow_*. Mantener
+    # estas features activas evita errores de atributo y preserva comportamiento.
     return {
-        "allow_menu": setting.allow_menu,
-        "allow_votes": setting.allow_votes,
-        "allow_feedback": setting.allow_feedback,
-        "allow_games": setting.allow_games,
+        "allow_menu": True,
+        "allow_votes": True,
+        "allow_feedback": True,
+        "allow_games": True,
     }

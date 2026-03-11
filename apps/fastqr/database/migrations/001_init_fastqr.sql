@@ -1,10 +1,10 @@
 create extension if not exists pgcrypto;
 
 -- =========================================
--- TABLES
+-- RESTAURANTS
 -- =========================================
 
-create table if not exists restaurants (
+create table restaurants (
     id uuid primary key default gen_random_uuid(),
     name varchar(120) not null,
     slug varchar(120) not null unique,
@@ -12,25 +12,70 @@ create table if not exists restaurants (
     created_at timestamptz not null default now()
 );
 
-create table if not exists categories (
-    id uuid primary key default gen_random_uuid(),
-    restaurant_id uuid not null references restaurants(id) on delete cascade,
-    name varchar(120) not null,
-    sort_order integer not null default 0
+create table restaurant_settings (
+    restaurant_id uuid primary key references restaurants(id) on delete cascade,
+    primary_color varchar(20),
+    secondary_color varchar(20),
+    logo_url varchar(255),
+    welcome_message text,
+    currency varchar(10) default 'EUR',
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
 );
 
-create table if not exists tables (
+-- =========================================
+-- USERS (DASHBOARD)
+-- =========================================
+
+create table users (
+    id uuid primary key default gen_random_uuid(),
+    restaurant_id uuid not null references restaurants(id) on delete cascade,
+    email varchar(190) not null unique,
+    password_hash varchar(255) not null,
+    role varchar(20) not null default 'manager',
+    created_at timestamptz not null default now()
+);
+
+create index idx_users_restaurant on users(restaurant_id);
+
+-- =========================================
+-- TABLES
+-- =========================================
+
+create table tables (
     id uuid primary key default gen_random_uuid(),
     restaurant_id uuid not null references restaurants(id) on delete cascade,
     code varchar(30) not null,
-    qr_token varchar(100) not null unique,
+    qr_token varchar(60) not null unique,
     is_enabled boolean not null default true,
     scan_cooldown_minutes integer not null default 10,
+    last_scan_at timestamptz,
     created_at timestamptz not null default now(),
     constraint uq_table_code_restaurant unique (restaurant_id, code)
 );
 
-create table if not exists dishes (
+create index idx_tables_restaurant on tables(restaurant_id);
+create index idx_tables_qr_token on tables(qr_token);
+
+-- =========================================
+-- CATEGORIES
+-- =========================================
+
+create table categories (
+    id uuid primary key default gen_random_uuid(),
+    restaurant_id uuid not null references restaurants(id) on delete cascade,
+    name varchar(120) not null,
+    sort_order integer not null default 0,
+    created_at timestamptz not null default now()
+);
+
+create index idx_categories_restaurant on categories(restaurant_id);
+
+-- =========================================
+-- DISHES
+-- =========================================
+
+create table dishes (
     id uuid primary key default gen_random_uuid(),
     restaurant_id uuid not null references restaurants(id) on delete cascade,
     category_id uuid not null references categories(id) on delete cascade,
@@ -42,37 +87,74 @@ create table if not exists dishes (
     created_at timestamptz not null default now()
 );
 
-create table if not exists users (
-    id uuid primary key default gen_random_uuid(),
-    restaurant_id uuid not null references restaurants(id) on delete cascade,
-    email varchar(190) not null unique,
-    password_hash varchar(255) not null,
-    role varchar(20) not null default 'manager',
-    created_at timestamptz not null default now()
-);
+create index idx_dishes_restaurant on dishes(restaurant_id);
+create index idx_dishes_category on dishes(category_id);
+create index idx_dishes_available on dishes(restaurant_id, is_available);
 
-create table if not exists votes (
+-- =========================================
+-- VOTES
+-- =========================================
+
+create table votes (
     id uuid primary key default gen_random_uuid(),
     restaurant_id uuid not null references restaurants(id) on delete cascade,
     table_id uuid not null references tables(id) on delete cascade,
     dish_id uuid not null references dishes(id) on delete cascade,
-    session_token text not null,
+    session_token varchar(120) not null,
     vote_date date not null,
     created_at timestamptz not null default now(),
-    constraint uq_vote_dish_session unique (restaurant_id, dish_id, session_token)
+    constraint uq_vote unique (restaurant_id, table_id, dish_id, session_token)
 );
 
-create table if not exists feedback (
+create index idx_votes_restaurant on votes(restaurant_id);
+create index idx_votes_dish on votes(dish_id);
+create index idx_votes_table on votes(table_id);
+create index idx_votes_date on votes(restaurant_id, vote_date);
+create index idx_votes_ranking_daily on votes(restaurant_id, vote_date, dish_id);
+create index idx_votes_session on votes(session_token);
+
+-- =========================================
+-- FEEDBACK
+-- =========================================
+
+create table feedback (
     id uuid primary key default gen_random_uuid(),
     restaurant_id uuid not null references restaurants(id) on delete cascade,
     table_id uuid references tables(id) on delete set null,
     rating integer not null check (rating between 1 and 5),
     comment text,
-    session_id varchar(120) not null,
+    session_token varchar(120) not null,
     created_at timestamptz not null default now()
 );
 
-create table if not exists game_sessions (
+create index idx_feedback_restaurant on feedback(restaurant_id);
+create index idx_feedback_created on feedback(created_at);
+create index idx_feedback_session on feedback(session_token);
+create index idx_feedback_rating on feedback(restaurant_id, rating);
+
+-- =========================================
+-- TABLE ACCESS SESSIONS
+-- =========================================
+
+create table table_access_sessions (
+    id uuid primary key default gen_random_uuid(),
+    restaurant_id uuid not null references restaurants(id) on delete cascade,
+    table_id uuid not null references tables(id) on delete cascade,
+    session_token varchar(120) not null,
+    created_at timestamptz not null default now(),
+    last_access_at timestamptz not null default now(),
+    constraint uq_table_access unique (table_id, session_token)
+);
+
+create index idx_sessions_restaurant on table_access_sessions(restaurant_id);
+create index idx_sessions_table on table_access_sessions(table_id);
+create index idx_sessions_session on table_access_sessions(session_token);
+
+-- =========================================
+-- GAME SESSIONS
+-- =========================================
+
+create table game_sessions (
     id uuid primary key default gen_random_uuid(),
     restaurant_id uuid not null references restaurants(id) on delete cascade,
     table_id uuid not null references tables(id) on delete cascade,
@@ -84,10 +166,14 @@ create table if not exists game_sessions (
     reward_status varchar(20) not null default 'issued',
     redeemed_at timestamptz,
     created_at timestamptz not null default now(),
-    constraint uq_game_session_daily unique (restaurant_id, session_token, game_type, played_date)
+    constraint uq_game_session unique (restaurant_id, session_token, game_type, played_date)
 );
 
-create table if not exists game_reward_rules (
+-- =========================================
+-- GAME REWARD RULES
+-- =========================================
+
+create table game_reward_rules (
     id uuid primary key default gen_random_uuid(),
     restaurant_id uuid not null references restaurants(id) on delete cascade,
     rule_date date not null,
@@ -96,19 +182,14 @@ create table if not exists game_reward_rules (
     redeemable boolean not null default false,
     is_active boolean not null default true,
     created_at timestamptz not null default now(),
-    constraint uq_game_reward_rule_daily_label unique (restaurant_id, rule_date, label)
+    constraint uq_game_rule unique (restaurant_id, rule_date, label)
 );
 
-create table if not exists table_access_sessions (
-    id uuid primary key default gen_random_uuid(),
-    table_id uuid not null references tables(id) on delete cascade,
-    session_token varchar(120) not null,
-    last_access_at timestamptz not null default now(),
-    created_at timestamptz not null default now(),
-    constraint uq_table_access_session unique (table_id, session_token)
-);
+-- =========================================
+-- SCORING SETTINGS
+-- =========================================
 
-create table if not exists scoring_settings (
+create table scoring_settings (
     id uuid primary key default gen_random_uuid(),
     restaurant_id uuid not null unique references restaurants(id) on delete cascade,
     vote_points integer not null default 1,
@@ -116,7 +197,11 @@ create table if not exists scoring_settings (
     updated_at timestamptz not null default now()
 );
 
-create table if not exists dish_score_overrides (
+-- =========================================
+-- DISH SCORE OVERRIDES
+-- =========================================
+
+create table dish_score_overrides (
     id uuid primary key default gen_random_uuid(),
     restaurant_id uuid not null references restaurants(id) on delete cascade,
     dish_id uuid not null references dishes(id) on delete cascade,
@@ -124,176 +209,92 @@ create table if not exists dish_score_overrides (
     bonus_points integer not null default 0,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
-    constraint uq_dish_score_override_daily unique (restaurant_id, dish_id, score_date)
+    constraint uq_dish_override unique (restaurant_id, dish_id, score_date)
 );
 
 -- =========================================
--- INDEXES
+-- EVENTS (ANALYTICS)
 -- =========================================
 
-create index if not exists idx_categories_restaurant_id on categories(restaurant_id);
-create index if not exists idx_tables_restaurant_id on tables(restaurant_id);
-create index if not exists idx_dishes_restaurant_id on dishes(restaurant_id);
-create index if not exists idx_dishes_category_id on dishes(category_id);
-create index if not exists idx_votes_restaurant_date on votes(restaurant_id, vote_date);
-create index if not exists idx_votes_dish_id on votes(dish_id);
-create index if not exists idx_feedback_restaurant_id on feedback(restaurant_id);
-create index if not exists idx_feedback_created_at on feedback(created_at);
-create index if not exists idx_game_sessions_restaurant_id on game_sessions(restaurant_id);
-create index if not exists idx_game_sessions_session_token on game_sessions(session_token);
-create index if not exists idx_game_reward_rules_restaurant_date on game_reward_rules(restaurant_id, rule_date);
-create index if not exists idx_dish_score_overrides_restaurant_date on dish_score_overrides(restaurant_id, score_date);
-create index if not exists idx_table_access_sessions_table_id on table_access_sessions(table_id);
-create index if not exists idx_table_access_sessions_last_access_at on table_access_sessions(last_access_at);
+create table events (
+    id uuid primary key default gen_random_uuid(),
+    restaurant_id uuid not null references restaurants(id) on delete cascade,
+    table_id uuid references tables(id),
+    session_token varchar(120),
+    event_type varchar(50) not null,
+    event_data jsonb,
+    created_at timestamptz not null default now()
+);
+
+create index idx_events_restaurant on events(restaurant_id);
+create index idx_events_created on events(created_at);
+create index idx_events_type on events(event_type);
+create index idx_events_restaurant_created on events(restaurant_id, created_at);
 
 -- =========================================
--- RLS FUNCTION
+-- CAMPAIGNS
 -- =========================================
 
-create or replace function get_user_restaurant_id()
-returns uuid
-language sql
-security definer
-set search_path = public
-as $$
-    select restaurant_id
-    from users
-    where id = auth.uid()
-$$;
+create table campaigns (
+    id uuid primary key default gen_random_uuid(),
+    restaurant_id uuid not null references restaurants(id) on delete cascade,
+    title varchar(120) not null,
+    description text,
+    campaign_type varchar(40),
+    start_at timestamptz,
+    end_at timestamptz,
+    is_active boolean not null default true,
+    created_at timestamptz not null default now()
+);
+
+create index idx_campaigns_restaurant on campaigns(restaurant_id);
 
 -- =========================================
--- ENABLE RLS
+-- CAMPAIGN INTERACTIONS
 -- =========================================
 
-alter table restaurants enable row level security;
-alter table categories enable row level security;
-alter table tables enable row level security;
-alter table dishes enable row level security;
-alter table users enable row level security;
-alter table votes enable row level security;
-alter table feedback enable row level security;
-alter table game_sessions enable row level security;
-alter table game_reward_rules enable row level security;
-alter table scoring_settings enable row level security;
-alter table dish_score_overrides enable row level security;
-alter table table_access_sessions enable row level security;
+create table campaign_interactions (
+    id uuid primary key default gen_random_uuid(),
+    campaign_id uuid not null references campaigns(id) on delete cascade,
+    restaurant_id uuid not null references restaurants(id) on delete cascade,
+    table_id uuid references tables(id),
+    session_token varchar(120),
+    interaction_type varchar(40) not null,
+    created_at timestamptz not null default now()
+);
+
+create index idx_campaign_interactions_campaign on campaign_interactions(campaign_id);
+create index idx_campaign_interactions_restaurant on campaign_interactions(restaurant_id);
 
 -- =========================================
--- ADMIN / DASHBOARD POLICIES
+-- BILLING CUSTOMERS
 -- =========================================
 
-create policy restaurant_access
-on restaurants
-for select
-using (id = get_user_restaurant_id());
-
-create policy categories_isolation
-on categories
-for all
-using (restaurant_id = get_user_restaurant_id())
-with check (restaurant_id = get_user_restaurant_id());
-
-create policy tables_isolation
-on tables
-for all
-using (restaurant_id = get_user_restaurant_id())
-with check (restaurant_id = get_user_restaurant_id());
-
-create policy dishes_isolation
-on dishes
-for all
-using (restaurant_id = get_user_restaurant_id())
-with check (restaurant_id = get_user_restaurant_id());
-
-create policy users_isolation
-on users
-for all
-using (restaurant_id = get_user_restaurant_id())
-with check (restaurant_id = get_user_restaurant_id());
-
-create policy votes_isolation
-on votes
-for all
-using (restaurant_id = get_user_restaurant_id())
-with check (restaurant_id = get_user_restaurant_id());
-
-create policy feedback_isolation
-on feedback
-for all
-using (restaurant_id = get_user_restaurant_id())
-with check (restaurant_id = get_user_restaurant_id());
-
-create policy game_sessions_isolation
-on game_sessions
-for all
-using (restaurant_id = get_user_restaurant_id())
-with check (restaurant_id = get_user_restaurant_id());
-
-create policy game_reward_rules_isolation
-on game_reward_rules
-for all
-using (restaurant_id = get_user_restaurant_id())
-with check (restaurant_id = get_user_restaurant_id());
-
-create policy scoring_settings_isolation
-on scoring_settings
-for all
-using (restaurant_id = get_user_restaurant_id())
-with check (restaurant_id = get_user_restaurant_id());
-
-create policy dish_score_overrides_isolation
-on dish_score_overrides
-for all
-using (restaurant_id = get_user_restaurant_id())
-with check (restaurant_id = get_user_restaurant_id());
-
-create policy table_access_sessions_isolation
-on table_access_sessions
-for all
-using (
-    exists (
-        select 1
-        from tables t
-        where t.id = table_access_sessions.table_id
-          and t.restaurant_id = get_user_restaurant_id()
-    )
-)
-with check (
-    exists (
-        select 1
-        from tables t
-        where t.id = table_access_sessions.table_id
-          and t.restaurant_id = get_user_restaurant_id()
-    )
+create table billing_customers (
+    id uuid primary key default gen_random_uuid(),
+    restaurant_id uuid not null unique references restaurants(id) on delete cascade,
+    stripe_customer_id varchar(120) not null unique,
+    email varchar(190),
+    created_at timestamptz not null default now()
 );
 
 -- =========================================
--- PUBLIC MENU ACCESS (QR CLIENT)
+-- SUBSCRIPTIONS
 -- =========================================
 
-create policy public_menu_categories
-on categories
-for select
-using (true);
+create table subscriptions (
+    id uuid primary key default gen_random_uuid(),
+    restaurant_id uuid not null references restaurants(id) on delete cascade,
+    stripe_subscription_id varchar(120) not null unique,
+    plan varchar(50) not null,
+    status varchar(30) not null,
+    current_period_start timestamptz,
+    current_period_end timestamptz,
+    cancel_at timestamptz,
+    canceled_at timestamptz,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
 
-create policy public_menu_dishes
-on dishes
-for select
-using (is_available = true);
-
-create policy public_votes_insert
-on votes
-for insert
-with check (true);
-
-create policy public_feedback_insert
-on feedback
-for insert
-with check (true);
-
-create policy public_game_sessions_insert
-on game_sessions
-for insert
-with check (true);
-
-commit;
+create index idx_subscriptions_restaurant on subscriptions(restaurant_id);
+create index idx_subscriptions_status on subscriptions(status);

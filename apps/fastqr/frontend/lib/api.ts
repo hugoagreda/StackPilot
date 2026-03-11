@@ -1,28 +1,32 @@
 const API_BASE = '/api/v1'
 
-function getToken(): string | null {
-  if (typeof window === 'undefined') return null
-  return localStorage.getItem('fastqr_token')
-}
+export async function api(path: string, options?: RequestInit) {
+  const token =
+    typeof window === 'undefined'
+      ? null
+      : localStorage.getItem('fastqr_token')
 
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = getToken()
   const res = await fetch(`${API_BASE}${path}`, {
-    ...init,
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...init?.headers,
+      ...options?.headers,
     },
+    ...options,
   })
+
   if (!res.ok) {
-    const body = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(body?.detail ?? res.statusText)
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body?.detail ?? 'API error')
   }
-  return res.json() as Promise<T>
+
+  const text = await res.text()
+  return text ? JSON.parse(text) : null
 }
 
-// ─── Public types ────────────────────────────────────────────────────────────
+/* =========================
+   TYPES
+========================= */
 
 export interface MenuDish {
   id: string
@@ -42,33 +46,6 @@ export interface PublicMenu {
   table: string
   categories: MenuCategory[]
 }
-
-export interface RankingEntry {
-  dish_id: string
-  dish_name: string
-  votes: number
-  score: number
-}
-
-export interface TodayRanking {
-  date: string
-  ranking: RankingEntry[]
-}
-
-// ─── Auth types ───────────────────────────────────────────────────────────────
-
-export interface TokenResponse {
-  access_token: string
-}
-
-export interface MeResponse {
-  user_id: string
-  email: string
-  role: string
-  restaurant_id: string | null
-}
-
-// ─── Dashboard types ─────────────────────────────────────────────────────────
 
 export interface Overview {
   total_votes: number
@@ -98,65 +75,71 @@ export interface Table {
   restaurant_id: string
   code: string
   qr_token: string
+  is_enabled: boolean
+  scan_cooldown_minutes: number
 }
 
-// ─── API ─────────────────────────────────────────────────────────────────────
+export interface LoginResponse {
+  access_token: string
+  restaurant_id: string
+}
 
-export const api = {
-  // Public
-  getMenu: (qrToken: string, sessionToken: string) =>
-    apiFetch<PublicMenu>(
-      `/public/${qrToken}/menu?session_token=${encodeURIComponent(sessionToken)}`,
-    ),
+/* =========================
+   API
+========================= */
 
-  vote: (qrToken: string, dishId: string, sessionToken: string) =>
-    apiFetch<{ status: string }>(`/public/${qrToken}/votes`, {
-      method: 'POST',
-      body: JSON.stringify({ dish_id: dishId, session_token: sessionToken }),
-    }),
+export const fastqrApi = {
+  /* ===== AUTH ===== */
 
-  submitFeedback: (
-    qrToken: string,
-    rating: number,
-    comment: string | undefined,
-    sessionToken: string,
-  ) =>
-    apiFetch<{ status: string }>(`/public/${qrToken}/feedback`, {
-      method: 'POST',
-      body: JSON.stringify({ rating, comment, session_token: sessionToken }),
-    }),
-
-  getRanking: (qrToken: string) =>
-    apiFetch<TodayRanking>(`/public/${qrToken}/ranking/today`),
-
-  // Auth
   login: (email: string, password: string) =>
-    apiFetch<TokenResponse>('/auth/login', {
+    api('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({
+        email,
+        password,
+      }),
+    }) as Promise<LoginResponse>,
+
+  /* ===== PUBLIC MENU ===== */
+
+  getMenu: (qrToken: string, sessionToken?: string) =>
+    api(
+      `/public/${qrToken}/menu${
+        sessionToken
+          ? `?session_token=${encodeURIComponent(sessionToken)}`
+          : ''
+      }`,
+    ) as Promise<PublicMenu>,
+
+  voteDish: (qrToken: string, dishId: string, sessionToken: string) =>
+    api(`/public/${qrToken}/votes`, {
+      method: 'POST',
+      body: JSON.stringify({
+        dish_id: dishId,
+        session_token: sessionToken,
+      }),
     }),
 
-  me: () => apiFetch<MeResponse>('/auth/me'),
+  /* ===== DASHBOARD ===== */
 
-  // Dashboard
   getOverview: (restaurantId: string) =>
-    apiFetch<Overview>(`/dashboard/restaurants/${restaurantId}/overview`),
+    api(
+      `/dashboard/restaurants/${restaurantId}/overview`,
+    ) as Promise<Overview>,
 
   getCategories: (restaurantId: string) =>
-    apiFetch<Category[]>(`/dashboard/restaurants/${restaurantId}/categories`),
-
-  createCategory: (restaurantId: string, name: string) =>
-    apiFetch<Category>(`/dashboard/restaurants/${restaurantId}/categories`, {
-      method: 'POST',
-      body: JSON.stringify({ name }),
-    }),
+    api(
+      `/dashboard/restaurants/${restaurantId}/categories`,
+    ) as Promise<Category[]>,
 
   getDishes: (restaurantId: string) =>
-    apiFetch<Dish[]>(`/dashboard/restaurants/${restaurantId}/dishes`),
+    api(
+      `/dashboard/restaurants/${restaurantId}/dishes`,
+    ) as Promise<Dish[]>,
 
   createDish: (
     restaurantId: string,
-    data: {
+    payload: {
       category_id: string
       name: string
       description?: string
@@ -165,15 +148,15 @@ export const api = {
       is_available: boolean
     },
   ) =>
-    apiFetch<Dish>(`/dashboard/restaurants/${restaurantId}/dishes`, {
+    api(`/dashboard/restaurants/${restaurantId}/dishes`, {
       method: 'POST',
-      body: JSON.stringify(data),
-    }),
+      body: JSON.stringify(payload),
+    }) as Promise<Dish>,
 
   updateDish: (
     restaurantId: string,
     dishId: string,
-    data: Partial<{
+    payload: Partial<{
       category_id: string
       name: string
       description: string
@@ -182,17 +165,36 @@ export const api = {
       is_available: boolean
     }>,
   ) =>
-    apiFetch<Dish>(`/dashboard/restaurants/${restaurantId}/dishes/${dishId}`, {
-      method: 'PATCH',
-      body: JSON.stringify(data),
-    }),
+    api(
+      `/dashboard/restaurants/${restaurantId}/dishes/${dishId}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      },
+    ) as Promise<Dish>,
+
+  /* ===== TABLES ===== */
 
   getTables: (restaurantId: string) =>
-    apiFetch<Table[]>(`/dashboard/restaurants/${restaurantId}/tables`),
+    api(
+      `/dashboard/restaurants/${restaurantId}/tables`,
+    ) as Promise<Table[]>,
 
   createTable: (restaurantId: string, code: string) =>
-    apiFetch<Table>(`/dashboard/restaurants/${restaurantId}/tables`, {
+    api(`/dashboard/restaurants/${restaurantId}/tables`, {
       method: 'POST',
       body: JSON.stringify({ code }),
-    }),
+    }) as Promise<Table>,
+
+  spinWheel: (qrToken: string, sessionToken: string) =>
+    api(`/public/${qrToken}/games/spin`, {
+      method: 'POST',
+      body: JSON.stringify({
+        session_token: sessionToken,
+      }),
+    }) as Promise<{
+      reward_label: string
+      redeemable: boolean
+      reward_code?: string
+    }>,
 }

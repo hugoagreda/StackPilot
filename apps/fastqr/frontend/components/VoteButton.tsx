@@ -7,21 +7,20 @@ interface VoteButtonProps {
 }
 
 export function VoteButton({ voted, disabled, onClick }: VoteButtonProps) {
-  if (voted) {
-    return (
-      <p className="mt-3 text-sm font-medium text-green-600 flex items-center gap-1">
-        ✓ Voto registrado
-      </p>
-    )
-  }
   return (
     <button
       onClick={onClick}
-      disabled={disabled}
-      className="mt-3 w-full py-2 rounded-lg bg-orange-500 text-white text-sm font-semibold
-        hover:bg-orange-600 active:bg-orange-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+      disabled={disabled || voted}
+      className="btn"
+      style={{
+        width: '100%',
+        background: voted ? '#e6f7ef' : 'var(--primary)',
+        color: voted ? 'var(--ok)' : '#fff',
+        border: voted ? '1px solid #b7e4c7' : 'none',
+        fontWeight: 600,
+      }}
     >
-      👍 Votar
+      {voted ? '✓ Voto registrado' : '👍 Votar'}
     </button>
   )
 }

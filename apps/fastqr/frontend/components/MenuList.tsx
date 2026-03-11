@@ -10,20 +10,34 @@ interface MenuListProps {
 }
 
 export function MenuList({ categories, votedDishes, onVote }: MenuListProps) {
+
   if (categories.length === 0) {
     return (
-      <p className="text-center text-gray-400 py-12">No hay platos disponibles en este momento.</p>
+      <section className="card">
+        <p className="muted" style={{ margin: 0 }}>
+          No hay platos disponibles en este momento.
+        </p>
+      </section>
     )
   }
 
   return (
-    <div className="space-y-8">
+    <div className="stack-lg">
+
       {categories.map((cat) => (
         <section key={cat.id}>
-          <h2 className="text-lg font-bold text-gray-800 mb-4 pb-2 border-b border-gray-100">
+
+          <h2
+            style={{
+              marginBottom: 12,
+              fontSize: 20,
+              fontWeight: 700,
+            }}
+          >
             {cat.name}
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+          <div className="list">
             {cat.dishes.map((dish) => (
               <DishCard
                 key={dish.id}
@@ -33,8 +47,10 @@ export function MenuList({ categories, votedDishes, onVote }: MenuListProps) {
               />
             ))}
           </div>
+
         </section>
       ))}
+
     </div>
   )
 }

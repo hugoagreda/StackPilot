@@ -75,6 +75,7 @@ def _enforce_table_access_policy(db: Session, table: Table, session_token: str |
     if access_session is None:
         db.add(
             TableAccessSession(
+                restaurant_id=table.restaurant_id,
                 table_id=table.id,
                 session_token=normalized_session_token,
                 last_access_at=now,
@@ -231,7 +232,7 @@ def create_feedback(
         table_id=table.id,
         rating=rating,
         comment=normalized_comment,
-        session_id=normalized_session_token,
+        session_token=normalized_session_token,
     )
     db.add(feedback)
     db.commit()

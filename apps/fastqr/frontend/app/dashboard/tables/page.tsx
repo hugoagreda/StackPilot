@@ -1,106 +1,207 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import QRCode from 'qrcode'
-import { api, type Table } from '@/lib/api'
-import { TableRow } from '@/components/TableRow'
+import { useEffect, useMemo, useState } from 'react'
+import { fastqrApi, type Category, type Dish } from '@/lib/api'
 
-export default function DashboardTablesPage() {
+interface DishFormState {
+  name: string
+  description: string
+  price: string
+  category_id: string
+  image_url: string
+  is_available: boolean
+}
+
+const emptyForm: DishFormState = {
+  name: '',
+  description: '',
+  price: '',
+  category_id: '',
+  image_url: '',
+  is_available: true,
+}
+
+export default function DashboardDishesPage() {
   const [restaurantId, setRestaurantId] = useState<string | null>(null)
-  const [tables, setTables] = useState<Table[]>([])
-  const [newTableCode, setNewTableCode] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [categories, setCategories] = useState<Category[]>([])
+  const [dishes, setDishes] = useState<Dish[]>([])
 
-  const loadTables = async (rid: string) => {
-    const data = await api.getTables(rid)
-    setTables(data)
-  }
+  const [newCategoryName, setNewCategoryName] = useState('')
+  const [form, setForm] = useState<DishFormState>(emptyForm)
+  const [editingDishId, setEditingDishId] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     const rid = localStorage.getItem('fastqr_restaurant_id')
     setRestaurantId(rid)
     if (!rid) {
-      setError('Restaurante no encontrado')
+      setError('Configura restaurant_id en /dashboard')
       setLoading(false)
       return
     }
-    loadTables(rid)
+
+    Promise.all([fastqrApi.getCategories(rid), fastqrApi.getDishes(rid)])
+      .then(([cats, dishList]) => {
+        setCategories(cats)
+        setDishes(dishList)
+        if (cats.length > 0) {
+          setForm((prev) => ({ ...prev, category_id: cats[0].id }))
+        }
+      })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
   }, [])
 
-  const handleCreateTable = async () => {
-    if (!restaurantId || !newTableCode.trim()) return
+  const dishesByCategory = useMemo(() => {
+    const map = new Map<string, Dish[]>()
+    categories.forEach((c) => map.set(c.id, []))
+    dishes.forEach((d) => {
+      if (!map.has(d.category_id)) map.set(d.category_id, [])
+      map.get(d.category_id)!.push(d)
+    })
+    return map
+  }, [categories, dishes])
+
+  const refresh = async () => {
+    if (!restaurantId) return
+    const [cats, dishList] = await Promise.all([
+      fastqrApi.getCategories(restaurantId),
+      fastqrApi.getDishes(restaurantId),
+    ])
+    setCategories(cats)
+    setDishes(dishList)
+  }
+
+  const resetForm = () => {
+    setEditingDishId(null)
+    setForm({
+      ...emptyForm,
+      category_id: categories[0]?.id ?? '',
+    })
+  }
+
+  const handleSaveDish = async () => {
+    if (!restaurantId || !form.name.trim() || !form.category_id || !form.price.trim()) return
+    const priceNum = Number(form.price)
+    if (!Number.isFinite(priceNum) || priceNum < 0) {
+      setError('El precio no es válido')
+      return
+    }
+
+    setSaving(true)
+    setError(null)
+    const payload = {
+      name: form.name.trim(),
+      description: form.description.trim() || undefined,
+      price_cents: Math.round(priceNum * 100),
+      category_id: form.category_id,
+      image_url: form.image_url.trim() || undefined,
+      is_available: form.is_available,
+    }
+
     try {
-      await api.createTable(restaurantId, newTableCode.trim())
-      setNewTableCode('')
-      await loadTables(restaurantId)
+      if (editingDishId) {
+        await fastqrApi.updateDish(restaurantId, editingDishId, payload)
+      } else {
+        await fastqrApi.createDish(restaurantId, payload)
+      }
+      await refresh()
+      resetForm()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo crear mesa')
+      setError(err instanceof Error ? err.message : 'Error guardando plato')
+    } finally {
+      setSaving(false)
     }
   }
 
-  const downloadQR = async (table: Table) => {
-    const url = `${window.location.origin}/t/${table.qr_token}`
+  const toggleAvailability = async (dish: Dish) => {
+    if (!restaurantId) return
     try {
-      const dataUrl = await QRCode.toDataURL(url, {
-        width: 720,
-        margin: 2,
-        color: {
-          dark: '#111827',
-          light: '#FFFFFF',
-        },
-      })
-
-      const a = document.createElement('a')
-      a.href = dataUrl
-      a.download = `mesa-${table.code}.png`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-    } catch {
-      setError('No se pudo descargar el QR')
+      await fastqrApi.updateDish(restaurantId, dish.id, { is_available: !dish.is_available })
+      await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo actualizar')
     }
   }
 
   return (
-    <div className="space-y-8">
-      <header>
-        <h1 className="text-2xl font-bold text-gray-900">Mesas y códigos QR</h1>
-        <p className="text-sm text-gray-500 mt-1">Crea mesas y descarga su QR para imprimir.</p>
-      </header>
+    <section className="stack-lg">
+  {categories.map((category) => {
+    const categoryDishes = dishesByCategory.get(category.id) ?? []
 
-      <section className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
-        <h2 className="font-semibold mb-3">Nueva mesa</h2>
-        <div className="flex flex-col sm:flex-row gap-2">
-          <input
-            value={newTableCode}
-            onChange={(e) => setNewTableCode(e.target.value)}
-            placeholder="Ej: 12"
-            className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm"
-          />
-          <button
-            onClick={handleCreateTable}
-            className="px-4 py-2 rounded-lg bg-orange-500 text-white text-sm font-semibold hover:bg-orange-600"
-          >
-            Crear mesa
-          </button>
-        </div>
-      </section>
+    return (
+      <article key={category.id} className="card">
+        <header style={{ marginBottom: 12 }}>
+          <h3 style={{ margin: 0, fontSize: 18 }}>
+            {category.name}
+          </h3>
+        </header>
 
-      {loading && <p className="text-sm text-gray-400">Cargando...</p>}
-      {error && <p className="text-sm text-red-500">{error}</p>}
+        {categoryDishes.length === 0 ? (
+          <p className="muted">No hay platos en esta categoria.</p>
+        ) : (
+          <div className="stack">
+            {categoryDishes.map((dish) => (
+              <div
+                key={dish.id}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '10px 0',
+                  borderTop: '1px solid var(--line)',
+                }}
+              >
+                <div>
+                  <p style={{ margin: 0, fontWeight: 600 }}>
+                    {dish.name}
+                  </p>
 
-      <section className="space-y-3">
-        {tables.map((table) => (
-          <TableRow key={table.id} table={table} onDownloadQR={downloadQR} />
-        ))}
+                  <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+                    {(dish.price_cents / 100).toLocaleString('es-ES', {
+                      style: 'currency',
+                      currency: 'EUR',
+                    })}
+                  </p>
+                </div>
 
-        {!loading && tables.length === 0 && (
-          <p className="text-sm text-gray-400">Aún no hay mesas creadas.</p>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    onClick={() => {
+                      setEditingDishId(dish.id)
+
+                      setForm({
+                        name: dish.name,
+                        description: dish.description ?? '',
+                        price: (dish.price_cents / 100).toString(),
+                        category_id: dish.category_id,
+                        image_url: dish.image_url ?? '',
+                        is_available: dish.is_available,
+                      })
+                    }}
+                    className="btn btn-soft"
+                  >
+                    Editar
+                  </button>
+
+                  <button
+                    onClick={() => toggleAvailability(dish)}
+                    className={`btn ${
+                      dish.is_available ? 'btn-danger' : 'btn-soft'
+                    }`}
+                  >
+                    {dish.is_available ? 'Desactivar' : 'Activar'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         )}
-      </section>
-    </div>
+      </article>
+    )
+  })}
+</section>
   )
 }

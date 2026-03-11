@@ -1,237 +1,160 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
-import { api, type PublicMenu, type TodayRanking } from '@/lib/api'
+import { fastqrApi, type PublicMenu } from '@/lib/api'
 import { MenuList } from '@/components/MenuList'
+import { SpinWheel } from '@/components/SpinWheel'
 
-function getOrCreateSessionToken(qrToken: string): string {
+function getOrCreateSessionToken(qrToken: string) {
   const key = `fastqr_session_${qrToken}`
-  if (typeof window === 'undefined') return ''
-  const existing = sessionStorage.getItem(key)
-  if (existing) return existing
-  const newToken = crypto.randomUUID()
-  sessionStorage.setItem(key, newToken)
-  return newToken
+  const current = sessionStorage.getItem(key)
+
+  if (current) return current
+
+  const created = crypto.randomUUID()
+  sessionStorage.setItem(key, created)
+
+  return created
 }
 
-function getVotedDishes(qrToken: string): Set<string> {
-  try {
-    const key = `fastqr_voted_${qrToken}`
-    const raw = sessionStorage.getItem(key)
-    return new Set(raw ? JSON.parse(raw) : [])
-  } catch {
-    return new Set()
-  }
+function getVotedMap(qrToken: string) {
+  const key = `fastqr_voted_${qrToken}`
+  const raw = sessionStorage.getItem(key)
+
+  return new Set<string>(raw ? JSON.parse(raw) : [])
 }
 
-function saveVotedDish(qrToken: string, dishId: string, current: Set<string>): Set<string> {
-  const updated = new Set(current)
+function saveVoted(qrToken: string, dishId: string, list: Set<string>) {
+  const updated = new Set(list)
+
   updated.add(dishId)
-  sessionStorage.setItem(`fastqr_voted_${qrToken}`, JSON.stringify([...updated]))
-  return updated
-}
 
-interface StarRatingProps {
-  value: number
-  onChange: (v: number) => void
-}
-
-function StarRating({ value, onChange }: StarRatingProps) {
-  return (
-    <div className="flex gap-2">
-      {[1, 2, 3, 4, 5].map((star) => (
-        <button
-          key={star}
-          onClick={() => onChange(star)}
-          className={`text-2xl transition-transform hover:scale-110 ${
-            star <= value ? 'text-yellow-400' : 'text-gray-300'
-          }`}
-          aria-label={`${star} estrellas`}
-        >
-          ★
-        </button>
-      ))}
-    </div>
+  sessionStorage.setItem(
+    `fastqr_voted_${qrToken}`,
+    JSON.stringify(Array.from(updated))
   )
+
+  return updated
 }
 
 export default function TablePage() {
   const params = useParams<{ token: string }>()
-  const token = params?.token ?? ''
+  const token = params.token
 
   const [menu, setMenu] = useState<PublicMenu | null>(null)
-  const [ranking, setRanking] = useState<TodayRanking | null>(null)
+  const [sessionToken, setSessionToken] = useState('')
   const [votedDishes, setVotedDishes] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Feedback state
-  const [feedbackRating, setFeedbackRating] = useState(0)
-  const [feedbackComment, setFeedbackComment] = useState('')
-  const [feedbackSent, setFeedbackSent] = useState(false)
-  const [feedbackSending, setFeedbackSending] = useState(false)
-  const [feedbackError, setFeedbackError] = useState<string | null>(null)
-
-  const sessionToken = typeof window !== 'undefined' ? getOrCreateSessionToken(token) : ''
-
-  const loadMenu = useCallback(async () => {
-    if (!token) return
-    try {
-      const data = await api.getMenu(token, sessionToken)
-      setMenu(data)
-      setVotedDishes(getVotedDishes(token))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo cargar el menú')
-    } finally {
-      setLoading(false)
-    }
-  }, [token, sessionToken])
-
-  const loadRanking = useCallback(async () => {
-    if (!token) return
-    try {
-      const data = await api.getRanking(token)
-      setRanking(data)
-    } catch {
-      // ranking is non-critical
-    }
-  }, [token])
-
   useEffect(() => {
     if (!token) return
-    loadMenu()
-    loadRanking()
-  }, [loadMenu, loadRanking])
+
+    const session = getOrCreateSessionToken(token)
+
+    setSessionToken(session)
+    setVotedDishes(getVotedMap(token))
+
+    fastqrApi
+      .getMenu(token, session)
+      .then(setMenu)
+      .catch((e) =>
+        setError(e instanceof Error ? e.message : 'No se pudo cargar menu')
+      )
+      .finally(() => setLoading(false))
+  }, [token])
 
   const handleVote = async (dishId: string) => {
-    if (votedDishes.has(dishId)) return
-    try {
-      await api.vote(token, dishId, sessionToken)
-      setVotedDishes((prev) => saveVotedDish(token, dishId, prev))
-      loadRanking()
-    } catch (err) {
-      console.error('Vote failed', err)
-    }
-  }
+    if (!token || !sessionToken || votedDishes.has(dishId)) return
 
-  const handleFeedback = async () => {
-    if (feedbackRating === 0 || feedbackSending) return
-    setFeedbackSending(true)
-    setFeedbackError(null)
     try {
-      await api.submitFeedback(
-        token,
-        feedbackRating,
-        feedbackComment.trim() || undefined,
-        sessionToken,
-      )
-      setFeedbackSent(true)
-    } catch (err) {
-      setFeedbackError(err instanceof Error ? err.message : 'Error al enviar')
-    } finally {
-      setFeedbackSending(false)
+      await fastqrApi.voteDish(token, dishId, sessionToken)
+
+      setVotedDishes((prev) => saveVoted(token, dishId, prev))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo votar')
     }
   }
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
-      </div>
+      <main className="shell section">
+        <div className="card" style={{ textAlign: 'center' }}>
+          <p className="muted" style={{ margin: 0 }}>
+            Cargando menú...
+          </p>
+        </div>
+      </main>
     )
   }
 
   if (error || !menu) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4">
-        <div className="text-center">
-          <p className="text-4xl mb-4">🍽️</p>
-          <p className="text-gray-500">{error ?? 'Menú no disponible'}</p>
+      <main className="shell section">
+        <div className="card">
+          <h1 style={{ marginTop: 0 }}>Menú no disponible</h1>
+
+          <p className="muted" style={{ marginBottom: 0 }}>
+            {error ?? 'No se encontró el token de la mesa.'}
+          </p>
         </div>
-      </div>
+      </main>
     )
   }
 
   return (
-    <main className="max-w-2xl mx-auto px-4 py-8 pb-16">
-      {/* Header */}
-      <header className="mb-8 text-center">
-        <h1 className="text-3xl font-bold text-gray-900">{menu.restaurant}</h1>
-        <p className="mt-1 text-gray-500">Mesa {menu.table}</p>
+    <main
+      className="shell"
+      style={{
+        maxWidth: 640,
+        padding: '18px 0 32px',
+      }}
+    >
+      {/* HEADER */}
+
+      <header
+        className="card"
+        style={{
+          padding: 18,
+          marginBottom: 16,
+        }}
+      >
+        <p
+          className="muted"
+          style={{
+            margin: 0,
+            fontSize: 14,
+          }}
+        >
+          Mesa {menu.table}
+        </p>
+
+        <h1
+          style={{
+            margin: '6px 0 0',
+            fontSize: 26,
+            fontWeight: 700,
+          }}
+        >
+          {menu.restaurant}
+        </h1>
       </header>
 
-      {/* Menu */}
-      <MenuList categories={menu.categories} votedDishes={votedDishes} onVote={handleVote} />
+      {/* MENU */}
 
-      {/* Ranking */}
-      {ranking && ranking.ranking.length > 0 && (
-        <section className="mt-12">
-          <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-            🏆 Lo más votado hoy
-          </h2>
-          <ol className="space-y-2">
-            {ranking.ranking.slice(0, 5).map((entry, i) => (
-              <li
-                key={entry.dish_id}
-                className="flex items-center justify-between bg-white rounded-xl px-4 py-3 shadow-sm border border-gray-100"
-              >
-                <div className="flex items-center gap-3">
-                  <span
-                    className={`text-lg font-bold w-6 text-center ${
-                      i === 0
-                        ? 'text-yellow-400'
-                        : i === 1
-                          ? 'text-gray-400'
-                          : i === 2
-                            ? 'text-orange-600'
-                            : 'text-gray-300'
-                    }`}
-                  >
-                    {i + 1}
-                  </span>
-                  <span className="font-medium text-gray-800">{entry.dish_name}</span>
-                </div>
-                <span className="text-sm text-gray-500">{entry.votes} votos</span>
-              </li>
-            ))}
-          </ol>
-        </section>
-      )}
+      <MenuList
+        categories={menu.categories}
+        votedDishes={votedDishes}
+        onVote={handleVote}
+      />
 
-      {/* Feedback */}
-      <section className="mt-12 bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-        <h2 className="text-lg font-bold text-gray-800 mb-1">¿Cómo fue tu experiencia?</h2>
-        <p className="text-sm text-gray-500 mb-4">Tu opinión ayuda al restaurante a mejorar.</p>
+      {/* SPIN WHEEL */}
 
-        {feedbackSent ? (
-          <p className="text-green-600 font-semibold text-center py-4">
-            ✓ ¡Gracias por tu valoración!
-          </p>
-        ) : (
-          <div className="space-y-4">
-            <StarRating value={feedbackRating} onChange={setFeedbackRating} />
-            <textarea
-              value={feedbackComment}
-              onChange={(e) => setFeedbackComment(e.target.value)}
-              placeholder="Comentario opcional..."
-              rows={2}
-              maxLength={800}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm resize-none
-                focus:outline-none focus:ring-2 focus:ring-orange-400"
-            />
-            {feedbackError && <p className="text-sm text-red-500">{feedbackError}</p>}
-            <button
-              onClick={handleFeedback}
-              disabled={feedbackRating === 0 || feedbackSending}
-              className="w-full py-2.5 rounded-lg bg-orange-500 text-white font-semibold
-                hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              {feedbackSending ? 'Enviando...' : 'Enviar valoración'}
-            </button>
-          </div>
-        )}
-      </section>
+      <SpinWheel
+        qrToken={token}
+        sessionToken={sessionToken}
+      />
     </main>
   )
 }

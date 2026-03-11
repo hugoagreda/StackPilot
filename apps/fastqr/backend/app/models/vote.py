@@ -13,9 +13,10 @@ class Vote(Base):
     __table_args__ = (
         UniqueConstraint(
             "restaurant_id",
+            "table_id",
             "dish_id",
             "session_token",
-            name="uq_vote_dish_session",
+            name="uq_vote",
         ),
     )
 

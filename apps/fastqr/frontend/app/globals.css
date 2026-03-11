@@ -1,9 +1,199 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+:root {
+  --bg: #f6f8fc;
+  --surface: #ffffff;
+  --surface-soft: #f1f4f9;
 
-@layer base {
-  body {
-    @apply bg-gray-50 text-gray-900 antialiased;
+  --text: #0f172a;
+  --muted: #667085;
+
+  --line: #e3e8f2;
+
+  --primary: #0f766e;
+  --primary-strong: #0b5d57;
+
+  --danger: #b42318;
+  --ok: #147a3f;
+
+  --radius: 14px;
+
+  --shadow-sm: 0 2px 6px rgba(16, 24, 40, 0.05);
+  --shadow: 0 10px 30px rgba(16, 24, 40, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "Inter",
+    "Segoe UI",
+    sans-serif;
+
+  background: radial-gradient(
+      circle at top left,
+      #edf8f6 0%,
+      var(--bg) 50%
+    );
+
+  color: var(--text);
+
+  min-height: 100vh;
+}
+
+/* LINKS */
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* FORM ELEMENTS */
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+/* MAIN PAGE WRAPPER */
+
+.shell {
+  width: min(1100px, 100% - 24px);
+  margin: 0 auto;
+}
+
+/* CARD */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: 20px;
+}
+
+/* TEXT */
+
+.muted {
+  color: var(--muted);
+}
+
+/* BUTTONS */
+
+.btn {
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-weight: 600;
+  cursor: pointer;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  gap: 6px;
+
+  transition: all 0.15s ease;
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: white;
+}
+
+.btn-primary:hover {
+  background: var(--primary-strong);
+}
+
+.btn-soft {
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.btn-soft:hover {
+  background: #e6ebf3;
+}
+
+.btn-danger {
+  background: #fde8e8;
+  color: var(--danger);
+}
+
+/* INPUTS */
+
+.input,
+.select,
+.textarea {
+  width: 100%;
+
+  border: 1px solid var(--line);
+  border-radius: 10px;
+
+  background: #fff;
+
+  padding: 10px 12px;
+
+  color: var(--text);
+
+  transition: border 0.15s ease;
+}
+
+.input:focus,
+.select:focus,
+.textarea:focus {
+  outline: 2px solid #9fd9d2;
+  border-color: #79c4bb;
+}
+
+/* SPACING */
+
+.stack {
+  display: grid;
+  gap: 12px;
+}
+
+.stack-lg {
+  display: grid;
+  gap: 20px;
+}
+
+/* GRID */
+
+.grid-2 {
+  display: grid;
+  gap: 16px;
+}
+
+@media (min-width: 800px) {
+  .grid-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+/* MOBILE FRIENDLY LISTS */
+
+.list {
+  display: grid;
+  gap: 12px;
+}
+
+/* PAGE SECTIONS */
+
+.section {
+  padding: 28px 0;
 }

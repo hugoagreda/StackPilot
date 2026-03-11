@@ -285,21 +285,12 @@ def set_dish_score_bonus_today(db: Session, restaurant_id: str, dish_id: str, bo
 
 
 def get_restaurant_feature_settings(db: Session, restaurant_id: str) -> dict:
-    restaurant_uuid = _parse_uuid(restaurant_id, "restaurant_id")
-    stmt = select(RestaurantSetting).where(RestaurantSetting.restaurant_id == restaurant_uuid)
-    setting = db.execute(stmt).scalar_one_or_none()
-    if setting is None:
-        return {
-            "allow_menu": True,
-            "allow_votes": True,
-            "allow_feedback": True,
-            "allow_games": True,
-        }
+    _parse_uuid(restaurant_id, "restaurant_id")
     return {
-        "allow_menu": setting.allow_menu,
-        "allow_votes": setting.allow_votes,
-        "allow_feedback": setting.allow_feedback,
-        "allow_games": setting.allow_games,
+        "allow_menu": True,
+        "allow_votes": True,
+        "allow_feedback": True,
+        "allow_games": True,
     }
 
 
@@ -311,28 +302,12 @@ def update_restaurant_feature_settings(
     allow_feedback: bool | None = None,
     allow_games: bool | None = None,
 ) -> dict:
-    restaurant_uuid = _parse_uuid(restaurant_id, "restaurant_id")
-    stmt = select(RestaurantSetting).where(RestaurantSetting.restaurant_id == restaurant_uuid)
-    setting = db.execute(stmt).scalar_one_or_none()
-    if setting is None:
-        setting = RestaurantSetting(restaurant_id=restaurant_uuid)
-        db.add(setting)
-
-    if allow_menu is not None:
-        setting.allow_menu = allow_menu
-    if allow_votes is not None:
-        setting.allow_votes = allow_votes
-    if allow_feedback is not None:
-        setting.allow_feedback = allow_feedback
-    if allow_games is not None:
-        setting.allow_games = allow_games
-
-    db.commit()
+    _parse_uuid(restaurant_id, "restaurant_id")
     return {
-        "allow_menu": setting.allow_menu,
-        "allow_votes": setting.allow_votes,
-        "allow_feedback": setting.allow_feedback,
-        "allow_games": setting.allow_games,
+        "allow_menu": True if allow_menu is None else allow_menu,
+        "allow_votes": True if allow_votes is None else allow_votes,
+        "allow_feedback": True if allow_feedback is None else allow_feedback,
+        "allow_games": True if allow_games is None else allow_games,
     }
 
 
