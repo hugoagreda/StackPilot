@@ -1,3 +1,11 @@
+"""
+app/services/dashboard_service.py — CRUD del dashboard para el restaurante autenticado.
+
+Responsabilidades: categorías, platos, tablas, configuración de features,
+ajustes de scoring y métricas de overview. Todos los métodos reciben el
+restaurant_id como string y lo validan con _parse_uuid antes de usarlo en
+queries, centralizando la conversión UUID en un único punto.
+"""
 import uuid
 from datetime import date
 
@@ -13,6 +21,36 @@ from app.models.restaurant_setting import RestaurantSetting
 from app.models.scoring_setting import ScoringSetting
 from app.models.table import Table
 from app.models.vote import Vote
+from app.utils.common import parse_uuid as _parse_uuid
+
+
+def _compute_overview_metrics(db: Session, restaurant_id: uuid.UUID) -> dict:
+    """
+    Ejecuta 4 COUNT/AVG en una sola función para evitar duplicar la lógica.
+
+    Por qué una función privada en lugar de inlinarla dos veces:
+    get_overview() y get_overview_by_restaurant_id() necesitaban el mismo bloque
+    de 4 queries. Extraerlo garantiza que cualquier cambio en las métricas
+    (p.ej. añadir total_tables) solo se hace en un lugar — principio DRY.
+    """
+    votes_stmt = select(func.count(Vote.id)).where(Vote.restaurant_id == restaurant_id)
+    unique_sessions_stmt = select(func.count(distinct(Vote.session_token))).where(
+        Vote.restaurant_id == restaurant_id
+    )
+    feedback_count_stmt = select(func.count(Feedback.id)).where(Feedback.restaurant_id == restaurant_id)
+    avg_rating_stmt = select(func.avg(Feedback.rating)).where(Feedback.restaurant_id == restaurant_id)
+
+    total_votes = db.execute(votes_stmt).scalar_one() or 0
+    unique_sessions = db.execute(unique_sessions_stmt).scalar_one() or 0
+    total_feedback = db.execute(feedback_count_stmt).scalar_one() or 0
+    avg_rating_raw = db.execute(avg_rating_stmt).scalar_one()
+
+    return {
+        "total_votes": int(total_votes),
+        "unique_sessions": int(unique_sessions),
+        "avg_rating": float(avg_rating_raw) if avg_rating_raw is not None else 0.0,
+        "total_feedback": int(total_feedback),
+    }
 
 
 def get_overview(db: Session, restaurant_slug: str | None = None) -> dict:
@@ -30,31 +68,7 @@ def get_overview(db: Session, restaurant_slug: str | None = None) -> dict:
             "total_feedback": 0,
         }
 
-    votes_stmt = select(func.count(Vote.id)).where(Vote.restaurant_id == restaurant.id)
-    unique_sessions_stmt = select(func.count(distinct(Vote.session_token))).where(
-        Vote.restaurant_id == restaurant.id
-    )
-    feedback_count_stmt = select(func.count(Feedback.id)).where(Feedback.restaurant_id == restaurant.id)
-    avg_rating_stmt = select(func.avg(Feedback.rating)).where(Feedback.restaurant_id == restaurant.id)
-
-    total_votes = db.execute(votes_stmt).scalar_one() or 0
-    unique_sessions = db.execute(unique_sessions_stmt).scalar_one() or 0
-    total_feedback = db.execute(feedback_count_stmt).scalar_one() or 0
-    avg_rating_raw = db.execute(avg_rating_stmt).scalar_one()
-
-    return {
-        "total_votes": int(total_votes),
-        "unique_sessions": int(unique_sessions),
-        "avg_rating": float(avg_rating_raw) if avg_rating_raw is not None else 0.0,
-        "total_feedback": int(total_feedback),
-    }
-
-
-def _parse_uuid(raw_value: str, field_name: str) -> uuid.UUID:
-    try:
-        return uuid.UUID(raw_value)
-    except ValueError as exc:
-        raise ValueError(f"Invalid {field_name} format") from exc
+    return _compute_overview_metrics(db, restaurant.id)
 
 
 def list_categories(db: Session, restaurant_id: str) -> list[Category]:
@@ -85,25 +99,7 @@ def create_category(db: Session, restaurant_id: str, name: str) -> Category:
 
 def get_overview_by_restaurant_id(db: Session, restaurant_id: str) -> dict:
     restaurant_uuid = _parse_uuid(restaurant_id, "restaurant_id")
-
-    votes_stmt = select(func.count(Vote.id)).where(Vote.restaurant_id == restaurant_uuid)
-    unique_sessions_stmt = select(func.count(distinct(Vote.session_token))).where(
-        Vote.restaurant_id == restaurant_uuid
-    )
-    feedback_count_stmt = select(func.count(Feedback.id)).where(Feedback.restaurant_id == restaurant_uuid)
-    avg_rating_stmt = select(func.avg(Feedback.rating)).where(Feedback.restaurant_id == restaurant_uuid)
-
-    total_votes = db.execute(votes_stmt).scalar_one() or 0
-    unique_sessions = db.execute(unique_sessions_stmt).scalar_one() or 0
-    total_feedback = db.execute(feedback_count_stmt).scalar_one() or 0
-    avg_rating_raw = db.execute(avg_rating_stmt).scalar_one()
-
-    return {
-        "total_votes": int(total_votes),
-        "unique_sessions": int(unique_sessions),
-        "avg_rating": float(avg_rating_raw) if avg_rating_raw is not None else 0.0,
-        "total_feedback": int(total_feedback),
-    }
+    return _compute_overview_metrics(db, restaurant_uuid)
 
 
 def list_tables(db: Session, restaurant_id: str) -> list[Table]:

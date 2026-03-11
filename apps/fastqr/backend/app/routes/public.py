@@ -10,23 +10,37 @@ from app.services.public_service import create_feedback, create_vote, get_menu_b
 router = APIRouter(prefix="/public")
 
 
+# ---------------------------------------------------------------------------
+# Helper privado de conversión de errores de servicio → HTTP
+# ---------------------------------------------------------------------------
+# Por qué existe _raise_for_feature_disabled:
+# El patrón {"error": "feature_disabled", "feature": "..."} aparecía en 4
+# endpoints distintos con el mismo bloque if/raise. Extraerlo a una función
+# elimina la duplicación (DRY) y centraliza el código de estado HTTP:
+# si el día de mañana queremos devolver 451 en lugar de 403, lo cambiamos
+# en un solo sitio.
+def _raise_for_feature_disabled(result: dict) -> None:
+    """Lanza HTTP 403 si el servicio indica que la feature está desactivada."""
+    if result.get("error") == "feature_disabled":
+        raise HTTPException(status_code=403, detail=f"Feature disabled: {result['feature']}")
+
+
 @router.get("/{qr_token}/menu")
 def get_public_menu(
     qr_token: str,
+    # session_token es opcional: el servicio ya declara el parámetro con
+    # default None, por lo que pasarlo directamente es más limpio que
+    # bifurcar "if session_token is None: call_a() else: call_b()".
     session_token: str | None = None,
     db: Session = Depends(get_db),
 ) -> PublicMenuResponse:
     try:
-        if session_token is None:
-            menu = get_menu_by_qr(db, qr_token)
-        else:
-            menu = get_menu_by_qr(db, qr_token, session_token)
+        menu = get_menu_by_qr(db, qr_token, session_token)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if menu is None:
         raise HTTPException(status_code=404, detail="QR token not found")
-    if menu.get("error") == "feature_disabled":
-        raise HTTPException(status_code=403, detail=f"Feature disabled: {menu['feature']}")
+    _raise_for_feature_disabled(menu)
     return PublicMenuResponse(**menu)
 
 
@@ -38,8 +52,7 @@ def vote_dish(qr_token: str, payload: VoteRequest, db: Session = Depends(get_db)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if result is None:
         raise HTTPException(status_code=404, detail="QR token not found")
-    if result.get("error") == "feature_disabled":
-        raise HTTPException(status_code=403, detail=f"Feature disabled: {result['feature']}")
+    _raise_for_feature_disabled(result)
     if result.get("error") == "dish_not_found":
         raise HTTPException(status_code=404, detail="Dish not found for this restaurant")
     return result
@@ -53,8 +66,7 @@ def submit_feedback(qr_token: str, payload: FeedbackRequest, db: Session = Depen
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if result is None:
         raise HTTPException(status_code=404, detail="QR token not found")
-    if result.get("error") == "feature_disabled":
-        raise HTTPException(status_code=403, detail=f"Feature disabled: {result['feature']}")
+    _raise_for_feature_disabled(result)
     return result
 
 
@@ -72,11 +84,9 @@ def spin_game(qr_token: str, payload: SpinRequest, db: Session = Depends(get_db)
         result = spin_wheel(db, qr_token, payload.session_token)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-
     if result is None:
         raise HTTPException(status_code=404, detail="QR token not found")
-    if result.get("error") == "feature_disabled":
-        raise HTTPException(status_code=403, detail=f"Feature disabled: {result['feature']}")
+    _raise_for_feature_disabled(result)
     return SpinResponse(**result)
 
 
@@ -86,12 +96,9 @@ def get_game_reward(qr_token: str, session_token: str, db: Session = Depends(get
         reward = get_session_reward(db, qr_token, session_token)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-
     if reward is None:
         raise HTTPException(status_code=404, detail="QR token not found")
-    if reward.get("error") == "feature_disabled":
-        raise HTTPException(status_code=403, detail=f"Feature disabled: {reward['feature']}")
+    _raise_for_feature_disabled(reward)
     if reward.get("error") == "reward_not_found":
         raise HTTPException(status_code=404, detail="Reward not found for this session")
-
     return RewardResponse(**reward)

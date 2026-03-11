@@ -2,7 +2,7 @@ from app.routes import public as public_routes
 
 
 def test_public_menu_ok(client, monkeypatch):
-    def _fake_get_menu_by_qr(_db, _qr_token):
+    def _fake_get_menu_by_qr(_db, _qr_token, _session_token=None):
         return {
             "restaurant": "Demo",
             "table": "T1",
@@ -18,7 +18,7 @@ def test_public_menu_ok(client, monkeypatch):
 
 
 def test_public_menu_not_found(client, monkeypatch):
-    monkeypatch.setattr(public_routes, "get_menu_by_qr", lambda _db, _qr_token: None)
+    monkeypatch.setattr(public_routes, "get_menu_by_qr", lambda _db, _qr_token, _session_token=None: None)
 
     response = client.get("/api/v1/public/missing/menu")
 

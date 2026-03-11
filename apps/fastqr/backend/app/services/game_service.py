@@ -1,27 +1,39 @@
+"""
+app/services/game_service.py — Lógica del juego de la ruleta (spin wheel).
+
+Responsabilidades:
+- Seleccionar un premio de forma aleatoriamente ponderada (secrets.randbelow).
+- Guardar el resultado por sesión, detectando spins duplicados del mismo día.
+- Exponer ajustes de reglas del juego y analytics del dashboard.
+- Gestionar el canje de premios (redeem_reward).
+"""
 import uuid
 import secrets
 from datetime import date, datetime, timezone
 
-from sqlalchemy import distinct, func, select
+from sqlalchemy import delete, distinct, func, select
 from sqlalchemy.orm import Session
 
 from app.models.game_reward_rule import GameRewardRule
 from app.models.game_session import GameSession
-from app.services.public_service import _get_restaurant_feature_settings, get_table_and_restaurant_by_qr
+from app.services.restaurant_service import (
+    get_restaurant_feature_settings as _get_restaurant_feature_settings,
+    get_table_and_restaurant_by_qr,
+)
+from app.utils.common import normalize_session_token as _normalize_session_token, parse_uuid as _parse_uuid, GameType, RewardStatus
 
+# ---------------------------------------------------------------------------
+# Tabla de premios por defecto
+# ---------------------------------------------------------------------------
+# Si el restaurante no ha configurado reglas para hoy, se usan estos pesos.
+# Los pesos son relativos (no tienen que sumar 100); la función _pick_reward
+# calcula el total y hace un draw proporcional.
 REWARDS = [
     {"label": "No Prize", "weight": 45, "redeemable": False},
     {"label": "5% OFF", "weight": 30, "redeemable": True},
     {"label": "Free Drink", "weight": 18, "redeemable": True},
     {"label": "Free Dessert", "weight": 7, "redeemable": True},
 ]
-
-
-def _normalize_session_token(session_token: str) -> str:
-    normalized = session_token.strip()
-    if not normalized:
-        raise ValueError("Invalid session_token")
-    return normalized
 
 
 def _build_default_rules() -> list[dict]:
@@ -50,6 +62,15 @@ def _get_rules_for_today(db: Session, restaurant_id: uuid.UUID) -> list[dict]:
 
 
 def _pick_reward(rules: list[dict]) -> dict:
+    """
+    Selección ponderada usando secrets.randbelow.
+
+    Por qué secrets en lugar de random.choices:
+    secrets usa el generador criptográficamente seguro del SO (CSPRNG), lo que
+    evita que un atacante que conozca la semilla prediga los próximos premios.
+    random.choices usa el Mersenne Twister, cuyo estado es predecible tras
+    observar suficientes outputs.
+    """
     active_rules = [item for item in rules if item.get("is_active", True) and item.get("weight", 0) > 0]
     if not active_rules:
         active_rules = _build_default_rules()
@@ -62,13 +83,6 @@ def _pick_reward(rules: list[dict]) -> dict:
         if roll <= current:
             return reward
     return active_rules[0]
-
-
-def _parse_uuid(raw_value: str, field_name: str) -> uuid.UUID:
-    try:
-        return uuid.UUID(raw_value)
-    except ValueError as exc:
-        raise ValueError(f"Invalid {field_name} format") from exc
 
 
 def spin_wheel(db: Session, qr_token: str, session_token: str) -> dict | None:
@@ -87,7 +101,7 @@ def spin_wheel(db: Session, qr_token: str, session_token: str) -> dict | None:
     existing_stmt = select(GameSession).where(
         GameSession.restaurant_id == restaurant.id,
         GameSession.session_token == normalized_session_token,
-        GameSession.game_type == "spin_wheel",
+        GameSession.game_type == GameType.SPIN_WHEEL,
         GameSession.played_date == today,
     )
     existing_session = db.execute(existing_stmt).scalar_one_or_none()
@@ -103,13 +117,13 @@ def spin_wheel(db: Session, qr_token: str, session_token: str) -> dict | None:
     reward_rules = _get_rules_for_today(db, restaurant.id)
     reward = _pick_reward(reward_rules)
     reward_code = secrets.token_urlsafe(8).upper() if reward["redeemable"] else None
-    reward_status = "issued" if reward["redeemable"] else "not_redeemable"
+    reward_status = RewardStatus.ISSUED if reward["redeemable"] else RewardStatus.NOT_REDEEMABLE
 
     game_session = GameSession(
         restaurant_id=restaurant.id,
         table_id=table.id,
         session_token=normalized_session_token,
-        game_type="spin_wheel",
+        game_type=GameType.SPIN_WHEEL,
         played_date=today,
         reward_code=reward_code,
         reward_label=reward["label"],
@@ -147,13 +161,16 @@ def update_today_game_settings(db: Session, restaurant_id: str, rules: list[dict
     if active_weight <= 0:
         raise ValueError("Active rules must have positive weight")
 
-    delete_stmt = select(GameRewardRule).where(
-        GameRewardRule.restaurant_id == restaurant_uuid,
-        GameRewardRule.rule_date == today,
+    # DELETE + INSERT (upsert manual) en lugar de actualizar fila a fila.
+    # Buena práctica cuando el conjunto de reglas puede cambiar por completo:
+    # es más simple y atómico que un diff de reglas existentes vs nuevas.
+    # La transacción garantiza que nunca quede el día sin reglas entre ambas ops.
+    db.execute(
+        delete(GameRewardRule).where(
+            GameRewardRule.restaurant_id == restaurant_uuid,
+            GameRewardRule.rule_date == today,
+        )
     )
-    existing_rules = db.execute(delete_stmt).scalars().all()
-    for item in existing_rules:
-        db.delete(item)
 
     for rule in rules:
         label = rule["label"].strip()
@@ -216,11 +233,14 @@ def get_session_reward(db: Session, qr_token: str, session_token: str) -> dict |
         .where(
             GameSession.restaurant_id == restaurant.id,
             GameSession.session_token == normalized_session_token,
-            GameSession.game_type == "spin_wheel",
+            GameSession.game_type == GameType.SPIN_WHEEL,
         )
         .order_by(GameSession.created_at.desc())
     )
-    game_session = db.execute(stmt).scalar_one_or_none()
+    # .scalars().first() en lugar de scalar_one_or_none() porque un mismo
+    # session_token podría tener varias entradas (ej. sesiones de días distintos).
+    # Queremos la más reciente, no fallar con MultipleResultsFound.
+    game_session = db.execute(stmt).scalars().first()
     if game_session is None:
         return {
             "error": "reward_not_found",
@@ -242,11 +262,11 @@ def get_games_analytics(db: Session, restaurant_id: str) -> dict:
     )
     issued_rewards_stmt = select(func.count(GameSession.id)).where(
         GameSession.restaurant_id == restaurant_uuid,
-        GameSession.reward_status.in_(["issued", "redeemed"]),
+        GameSession.reward_status.in_([RewardStatus.ISSUED, RewardStatus.REDEEMED]),
     )
     redeemed_rewards_stmt = select(func.count(GameSession.id)).where(
         GameSession.restaurant_id == restaurant_uuid,
-        GameSession.reward_status == "redeemed",
+        GameSession.reward_status == RewardStatus.REDEEMED,
     )
 
     total_spins = int(db.execute(total_spins_stmt).scalar_one() or 0)
@@ -281,20 +301,20 @@ def redeem_reward(db: Session, restaurant_id: str, reward_code: str) -> dict | N
     if game_session is None:
         return None
 
-    if game_session.reward_status == "not_redeemable":
+    if game_session.reward_status == RewardStatus.NOT_REDEEMABLE:
         raise ValueError("Reward is not redeemable")
 
-    if game_session.reward_status == "redeemed":
+    if game_session.reward_status == RewardStatus.REDEEMED:
         return {
             "reward_code": normalized_code,
-            "reward_status": "redeemed",
+            "reward_status": RewardStatus.REDEEMED,
         }
 
-    game_session.reward_status = "redeemed"
+    game_session.reward_status = RewardStatus.REDEEMED
     game_session.redeemed_at = datetime.now(timezone.utc)
     db.commit()
 
     return {
         "reward_code": normalized_code,
-        "reward_status": "redeemed",
+        "reward_status": RewardStatus.REDEEMED,
     }

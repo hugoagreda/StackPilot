@@ -4,6 +4,13 @@ from app.utils.auth import CurrentAuth
 
 
 def test_dashboard_overview_ok(client, monkeypatch):
+    app.dependency_overrides[dashboard_routes.get_current_auth] = lambda: CurrentAuth(
+        user_id="u1",
+        email="manager@example.com",
+        role="manager",
+        restaurant_id="11111111-1111-1111-1111-111111111111",
+    )
+
     monkeypatch.setattr(
         dashboard_routes,
         "get_overview",
@@ -16,6 +23,7 @@ def test_dashboard_overview_ok(client, monkeypatch):
     )
 
     response = client.get("/api/v1/dashboard/overview?restaurant_slug=demo")
+    app.dependency_overrides.pop(dashboard_routes.get_current_auth, None)
 
     assert response.status_code == 200
     body = response.json()

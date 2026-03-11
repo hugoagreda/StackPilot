@@ -52,10 +52,24 @@ def _enforce_restaurant_scope(path_restaurant_id: str, current_auth: CurrentAuth
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden restaurant scope")
 
 
+def _dish_to_response(dish) -> DishResponse:
+    return DishResponse(
+        id=str(dish.id),
+        restaurant_id=str(dish.restaurant_id),
+        category_id=str(dish.category_id),
+        name=dish.name,
+        description=dish.description,
+        price_cents=dish.price_cents,
+        image_url=dish.image_url,
+        is_available=dish.is_available,
+    )
+
+
 @router.get("/overview")
 def get_dashboard_overview(
     restaurant_slug: str | None = None,
     db: Session = Depends(get_db),
+    current_auth: CurrentAuth = Depends(get_current_auth),
 ) -> OverviewResponse:
     overview = get_overview(db, restaurant_slug)
     return OverviewResponse(**overview)
@@ -157,19 +171,7 @@ def get_restaurant_dishes(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    return [
-        DishResponse(
-            id=str(dish.id),
-            restaurant_id=str(dish.restaurant_id),
-            category_id=str(dish.category_id),
-            name=dish.name,
-            description=dish.description,
-            price_cents=dish.price_cents,
-            image_url=dish.image_url,
-            is_available=dish.is_available,
-        )
-        for dish in dishes
-    ]
+    return [_dish_to_response(dish) for dish in dishes]
 
 
 @router.post("/restaurants/{restaurant_id}/dishes")
@@ -194,16 +196,7 @@ def post_restaurant_dish(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    return DishResponse(
-        id=str(dish.id),
-        restaurant_id=str(dish.restaurant_id),
-        category_id=str(dish.category_id),
-        name=dish.name,
-        description=dish.description,
-        price_cents=dish.price_cents,
-        image_url=dish.image_url,
-        is_available=dish.is_available,
-    )
+    return _dish_to_response(dish)
 
 
 @router.patch("/restaurants/{restaurant_id}/dishes/{dish_id}")
@@ -233,16 +226,7 @@ def patch_restaurant_dish(
     if dish is None:
         raise HTTPException(status_code=404, detail="Dish not found")
 
-    return DishResponse(
-        id=str(dish.id),
-        restaurant_id=str(dish.restaurant_id),
-        category_id=str(dish.category_id),
-        name=dish.name,
-        description=dish.description,
-        price_cents=dish.price_cents,
-        image_url=dish.image_url,
-        is_available=dish.is_available,
-    )
+    return _dish_to_response(dish)
 
 
 @router.get("/restaurants/{restaurant_id}/games/analytics")

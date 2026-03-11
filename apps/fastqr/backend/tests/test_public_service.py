@@ -4,6 +4,14 @@ from types import SimpleNamespace
 from app.services import public_service
 
 
+_ALLOW_ALL_FEATURES = lambda _db, _restaurant_id: {
+    "allow_menu": True,
+    "allow_votes": True,
+    "allow_feedback": True,
+    "allow_games": True,
+}
+
+
 class FakeDb:
     def __init__(self):
         self.added = []
@@ -21,11 +29,8 @@ def test_create_feedback_trims_comment_and_session(monkeypatch):
     table = SimpleNamespace(id=uuid.uuid4())
     restaurant = SimpleNamespace(id=uuid.uuid4())
 
-    monkeypatch.setattr(
-        public_service,
-        "get_table_and_restaurant_by_qr",
-        lambda _db, _qr_token: (table, restaurant),
-    )
+    monkeypatch.setattr(public_service, "get_table_and_restaurant_by_qr", lambda _db, _qr_token: (table, restaurant))
+    monkeypatch.setattr(public_service, "_get_restaurant_feature_settings", _ALLOW_ALL_FEATURES)
 
     result = public_service.create_feedback(fake_db, "token123", 5, "  Great food  ", "  session-a  ")
 
@@ -42,11 +47,8 @@ def test_create_feedback_converts_blank_comment_to_none(monkeypatch):
     table = SimpleNamespace(id=uuid.uuid4())
     restaurant = SimpleNamespace(id=uuid.uuid4())
 
-    monkeypatch.setattr(
-        public_service,
-        "get_table_and_restaurant_by_qr",
-        lambda _db, _qr_token: (table, restaurant),
-    )
+    monkeypatch.setattr(public_service, "get_table_and_restaurant_by_qr", lambda _db, _qr_token: (table, restaurant))
+    monkeypatch.setattr(public_service, "_get_restaurant_feature_settings", _ALLOW_ALL_FEATURES)
 
     result = public_service.create_feedback(fake_db, "token123", 4, "   ", "session-a")
 
@@ -60,11 +62,8 @@ def test_create_feedback_rejects_blank_session_token(monkeypatch):
     table = SimpleNamespace(id=uuid.uuid4())
     restaurant = SimpleNamespace(id=uuid.uuid4())
 
-    monkeypatch.setattr(
-        public_service,
-        "get_table_and_restaurant_by_qr",
-        lambda _db, _qr_token: (table, restaurant),
-    )
+    monkeypatch.setattr(public_service, "get_table_and_restaurant_by_qr", lambda _db, _qr_token: (table, restaurant))
+    monkeypatch.setattr(public_service, "_get_restaurant_feature_settings", _ALLOW_ALL_FEATURES)
 
     try:
         public_service.create_feedback(fake_db, "token123", 5, "ok", "   ")

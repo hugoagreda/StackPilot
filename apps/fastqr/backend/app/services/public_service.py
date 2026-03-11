@@ -1,34 +1,40 @@
+"""
+app/services/public_service.py — Lógica de negocio para endpoints públicos.
+
+Endpoints servidos: menú, votos, feedback y ranking. Todos son accesibles sin
+autenticación, pero pueden estar desactivados por el restaurante (feature flags
+en RestaurantSetting). La función _enforce_table_access_policy gestiona el
+cooldown anti-spam de escaneo de QR.
+"""
 import uuid
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.category import Category
 from app.models.dish_score_override import DishScoreOverride
 from app.models.dish import Dish
 from app.models.feedback import Feedback
-from app.models.restaurant import Restaurant
-from app.models.restaurant_setting import RestaurantSetting
 from app.models.scoring_setting import ScoringSetting
 from app.models.table import Table
 from app.models.table_access_session import TableAccessSession
 from app.models.vote import Vote
+from app.services.restaurant_service import (
+    get_restaurant_feature_settings as _get_restaurant_feature_settings,
+    get_table_and_restaurant_by_qr,
+)
+from app.utils.common import normalize_session_token as _normalize_session_token
 
 
 def _as_utc(dt: datetime) -> datetime:
-    # SQLite can return naive datetimes even when the column is timezone-aware.
+    # SQLite devuelve datetimes sin tzinfo aunque el valor esté guardado en UTC.
+    # Añadir tzinfo=UTC permite comparar con datetime.now(timezone.utc) de forma segura.
     if dt.tzinfo is None:
         return dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc)
-
-
-def _normalize_session_token(session_token: str) -> str:
-    normalized = session_token.strip()
-    if not normalized:
-        raise ValueError("Invalid session_token")
-    return normalized
 
 
 def _normalize_comment(comment: str | None) -> str | None:
@@ -38,45 +44,16 @@ def _normalize_comment(comment: str | None) -> str | None:
     return normalized or None
 
 
-def get_table_and_restaurant_by_qr(db: Session, qr_token: str) -> tuple[Table, Restaurant] | None:
-    stmt = (
-        select(Table, Restaurant)
-        .join(Restaurant, Restaurant.id == Table.restaurant_id)
-        .where(Table.qr_token == qr_token)
-    )
-    result = db.execute(stmt).first()
-    if result is None:
-        return None
-    return result[0], result[1]
-
-
-def _get_restaurant_feature_settings(db: Session, restaurant_id: uuid.UUID) -> dict:
-    if not hasattr(db, "execute"):
-        return {
-            "allow_menu": True,
-            "allow_votes": True,
-            "allow_feedback": True,
-            "allow_games": True,
-        }
-
-    stmt = select(RestaurantSetting).where(RestaurantSetting.restaurant_id == restaurant_id)
-    setting = db.execute(stmt).scalar_one_or_none()
-    if setting is None:
-        return {
-            "allow_menu": True,
-            "allow_votes": True,
-            "allow_feedback": True,
-            "allow_games": True,
-        }
-    return {
-        "allow_menu": setting.allow_menu,
-        "allow_votes": setting.allow_votes,
-        "allow_feedback": setting.allow_feedback,
-        "allow_games": setting.allow_games,
-    }
-
-
 def _enforce_table_access_policy(db: Session, table: Table, session_token: str | None) -> None:
+    """
+    Aplica el cooldown de escaneo de QR por mesa y sesión.
+
+    Por qué IntegrityError en lugar de SELECT-for-update:
+    Capturar IntegrityError en el INSERT es el patrón "optimistic concurrency":
+    asumir que la inserción va a funcionar y gestionar la colisión solo cuando
+    ocurre. Es más eficiente que hacer un SELECT adicional para verificar cada vez,
+    especialmente con tráfico bajo/medio donde la colisión es rara.
+    """
     if not table.is_enabled:
         raise ValueError("Table QR is currently disabled")
 
@@ -103,7 +80,11 @@ def _enforce_table_access_policy(db: Session, table: Table, session_token: str |
                 last_access_at=now,
             )
         )
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            # Concurrent request already inserted this session — treat as first access.
+            db.rollback()
         return
 
     cooldown_until = _as_utc(access_session.last_access_at) + timedelta(minutes=cooldown_minutes)
@@ -112,7 +93,10 @@ def _enforce_table_access_policy(db: Session, table: Table, session_token: str |
         raise ValueError(f"Table access cooldown active, retry in {remaining} minute(s)")
 
     access_session.last_access_at = now
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
 
 
 def get_menu_by_qr(db: Session, qr_token: str, session_token: str | None = None) -> dict | None:
@@ -212,7 +196,13 @@ def create_vote(db: Session, qr_token: str, dish_id: str, session_token: str) ->
         vote_date=date.today(),
     )
     db.add(vote)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # Race condition: dos requests simultáneos del mismo session_token/dish.
+        # El segundo INSERT viola la restricción UNIQUE y se descarta de forma segura.
+        db.rollback()
+        return {"status": "ignored", "reason": "already_voted", "dish_id": dish_id}
 
     return {"status": "recorded", "dish_id": dish_id, "vote_date": str(vote.vote_date)}
 
@@ -268,7 +258,21 @@ def get_today_ranking_by_restaurant_id(db: Session, restaurant_id: str) -> dict:
 
 
 def _build_today_ranking_for_restaurant(db: Session, restaurant_id: uuid.UUID) -> dict:
+    """
+    Construye el ranking del día con soporte de puntuación ponderada.
 
+    Diseño del JOIN:
+    - INNER JOIN con Vote asegura que solo aparecen platos con al menos un voto.
+    - LEFT OUTER JOIN con DishScoreOverride añade bonus_points opcionales por plato.
+    Usar outerjoin evita excluir platos sin override; coalesce garantiza 0 si no hay.
+
+    Motivo del .[:10]:
+    El ranking muestra el Top 10. Truncar aquí (Python) en lugar de con .limit(10)
+    en SQL es aceptable: DishScoreOverride.bonus_points es necesario para ordenar
+    correctamente y no existe columna calculada en SQL para "score". Calcular en
+    Python con los datos ya agrupados mantiene la query más simple.
+    El antiguo .limit(50) erróneo ha sido eliminado — ahora se retorna el Top 10.
+    """
     today = date.today()
     setting_stmt = select(ScoringSetting).where(ScoringSetting.restaurant_id == restaurant_id)
     scoring_setting = db.execute(setting_stmt).scalar_one_or_none()
@@ -292,7 +296,6 @@ def _build_today_ranking_for_restaurant(db: Session, restaurant_id: uuid.UUID) -
         )
         .where(Vote.restaurant_id == restaurant_id, Vote.vote_date == today)
         .group_by(Dish.id, Dish.name)
-        .limit(50)
     )
 
     ranking_rows = db.execute(ranking_stmt).all()
