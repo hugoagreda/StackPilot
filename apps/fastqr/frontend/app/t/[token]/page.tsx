@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { useParams } from 'next/navigation'
 import { api, type PublicMenu, type TodayRanking } from '@/lib/api'
 import { MenuList } from '@/components/MenuList'
 
@@ -55,8 +56,9 @@ function StarRating({ value, onChange }: StarRatingProps) {
   )
 }
 
-export default function TablePage({ params }: { params: { token: string } }) {
-  const { token } = params
+export default function TablePage() {
+  const params = useParams<{ token: string }>()
+  const token = params?.token ?? ''
 
   const [menu, setMenu] = useState<PublicMenu | null>(null)
   const [ranking, setRanking] = useState<TodayRanking | null>(null)
@@ -74,6 +76,7 @@ export default function TablePage({ params }: { params: { token: string } }) {
   const sessionToken = typeof window !== 'undefined' ? getOrCreateSessionToken(token) : ''
 
   const loadMenu = useCallback(async () => {
+    if (!token) return
     try {
       const data = await api.getMenu(token, sessionToken)
       setMenu(data)
@@ -86,6 +89,7 @@ export default function TablePage({ params }: { params: { token: string } }) {
   }, [token, sessionToken])
 
   const loadRanking = useCallback(async () => {
+    if (!token) return
     try {
       const data = await api.getRanking(token)
       setRanking(data)
@@ -95,6 +99,7 @@ export default function TablePage({ params }: { params: { token: string } }) {
   }, [token])
 
   useEffect(() => {
+    if (!token) return
     loadMenu()
     loadRanking()
   }, [loadMenu, loadRanking])

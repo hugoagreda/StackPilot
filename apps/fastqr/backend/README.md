@@ -66,4 +66,7 @@ Variables esperadas en entorno del backend:
 - `FASTQR_JWT_ALGORITHM` (opcional, default `HS256`)
 - `FASTQR_JWT_EXPIRE_MINUTES` (opcional)
 
+El backend carga variables desde `/.env` (global del monorepo).
+Configura ahi `FASTQR_JWT_SECRET` y el resto de variables necesarias.
+
 Para detalles de SQL, revisa `../database/README.md`.

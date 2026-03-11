@@ -8,16 +8,11 @@ de python-jose ni de passlib.
 import logging
 import os
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
-from dotenv import load_dotenv
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 logger = logging.getLogger(__name__)
-
-BACKEND_ROOT = Path(__file__).resolve().parents[2]
-load_dotenv(dotenv_path=BACKEND_ROOT / ".env")
 
 # Bcrypt es el algoritmo recomendado para hashing de contraseñas porque:
 # - Es lento por diseño (coste adaptable): dificulta ataques de fuerza bruta.
