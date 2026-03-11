@@ -26,14 +26,14 @@ def test_public_menu_not_found(client, monkeypatch):
 
 
 def test_vote_invalid_dish_id(client, monkeypatch):
-    def _fake_create_vote(_db, _qr_token, _dish_id, _session_id):
+    def _fake_create_vote(_db, _qr_token, _dish_id, _session_token):
         raise ValueError("Invalid dish_id format")
 
     monkeypatch.setattr(public_routes, "create_vote", _fake_create_vote)
 
     response = client.post(
         "/api/v1/public/token123/votes",
-        json={"dish_id": "bad", "session_id": "session-a"},
+        json={"dish_id": "bad", "session_token": "session-a"},
     )
 
     assert response.status_code == 400
@@ -49,11 +49,11 @@ def test_vote_payload_validation(client):
 
 
 def test_vote_qr_not_found(client, monkeypatch):
-    monkeypatch.setattr(public_routes, "create_vote", lambda _db, _qr_token, _dish_id, _session_id: None)
+    monkeypatch.setattr(public_routes, "create_vote", lambda _db, _qr_token, _dish_id, _session_token: None)
 
     response = client.post(
         "/api/v1/public/missing/votes",
-        json={"dish_id": "2a8f8192-c502-4349-8a28-a45bf9cd7462", "session_id": "session-a"},
+        json={"dish_id": "2a8f8192-c502-4349-8a28-a45bf9cd7462", "session_token": "session-a"},
     )
 
     assert response.status_code == 404
@@ -64,12 +64,12 @@ def test_vote_dish_not_found(client, monkeypatch):
     monkeypatch.setattr(
         public_routes,
         "create_vote",
-        lambda _db, _qr_token, _dish_id, _session_id: {"error": "dish_not_found"},
+        lambda _db, _qr_token, _dish_id, _session_token: {"error": "dish_not_found"},
     )
 
     response = client.post(
         "/api/v1/public/token123/votes",
-        json={"dish_id": "2a8f8192-c502-4349-8a28-a45bf9cd7462", "session_id": "session-a"},
+        json={"dish_id": "2a8f8192-c502-4349-8a28-a45bf9cd7462", "session_token": "session-a"},
     )
 
     assert response.status_code == 404
@@ -80,7 +80,7 @@ def test_feedback_ok(client, monkeypatch):
     monkeypatch.setattr(
         public_routes,
         "create_feedback",
-        lambda _db, _qr_token, _rating, _comment, _session_id: {
+        lambda _db, _qr_token, _rating, _comment, _session_token: {
             "status": "received",
             "rating": 5,
         },
@@ -88,7 +88,7 @@ def test_feedback_ok(client, monkeypatch):
 
     response = client.post(
         "/api/v1/public/token123/feedback",
-        json={"rating": 5, "comment": "great", "session_id": "session-a"},
+        json={"rating": 5, "comment": "great", "session_token": "session-a"},
     )
 
     assert response.status_code == 200
@@ -99,31 +99,31 @@ def test_feedback_qr_not_found(client, monkeypatch):
     monkeypatch.setattr(
         public_routes,
         "create_feedback",
-        lambda _db, _qr_token, _rating, _comment, _session_id: None,
+        lambda _db, _qr_token, _rating, _comment, _session_token: None,
     )
 
     response = client.post(
         "/api/v1/public/missing/feedback",
-        json={"rating": 5, "comment": "ok", "session_id": "session-a"},
+        json={"rating": 5, "comment": "ok", "session_token": "session-a"},
     )
 
     assert response.status_code == 404
     assert response.json()["detail"] == "QR token not found"
 
 
-def test_feedback_invalid_session_id(client, monkeypatch):
-    def _fake_create_feedback(_db, _qr_token, _rating, _comment, _session_id):
-        raise ValueError("Invalid session_id")
+def test_feedback_invalid_session_token(client, monkeypatch):
+    def _fake_create_feedback(_db, _qr_token, _rating, _comment, _session_token):
+        raise ValueError("Invalid session_token")
 
     monkeypatch.setattr(public_routes, "create_feedback", _fake_create_feedback)
 
     response = client.post(
         "/api/v1/public/token123/feedback",
-        json={"rating": 5, "comment": "ok", "session_id": "   "},
+        json={"rating": 5, "comment": "ok", "session_token": "   "},
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "Invalid session_id"
+    assert response.json()["detail"] == "Invalid session_token"
 
 
 def test_ranking_ok(client, monkeypatch):
@@ -137,3 +137,67 @@ def test_ranking_ok(client, monkeypatch):
 
     assert response.status_code == 200
     assert "ranking" in response.json()
+
+
+def test_spin_game_ok(client, monkeypatch):
+    monkeypatch.setattr(
+        public_routes,
+        "spin_wheel",
+        lambda _db, _qr_token, _session_token: {
+            "status": "recorded",
+            "session_token": "session-a",
+            "reward_label": "5% OFF",
+            "reward_code": "ABC123",
+            "reward_status": "issued",
+        },
+    )
+
+    response = client.post(
+        "/api/v1/public/token123/games/spin",
+        json={"session_token": "session-a"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["reward_label"] == "5% OFF"
+
+
+def test_spin_game_qr_not_found(client, monkeypatch):
+    monkeypatch.setattr(public_routes, "spin_wheel", lambda _db, _qr_token, _session_token: None)
+
+    response = client.post(
+        "/api/v1/public/missing/games/spin",
+        json={"session_token": "session-a"},
+    )
+
+    assert response.status_code == 404
+
+
+def test_get_reward_ok(client, monkeypatch):
+    monkeypatch.setattr(
+        public_routes,
+        "get_session_reward",
+        lambda _db, _qr_token, _session_token: {
+            "session_token": "session-a",
+            "reward_label": "Free Drink",
+            "reward_code": "DRINK01",
+            "reward_status": "issued",
+        },
+    )
+
+    response = client.get("/api/v1/public/token123/games/reward?session_token=session-a")
+
+    assert response.status_code == 200
+    assert response.json()["reward_code"] == "DRINK01"
+
+
+def test_get_reward_not_found(client, monkeypatch):
+    monkeypatch.setattr(
+        public_routes,
+        "get_session_reward",
+        lambda _db, _qr_token, _session_token: {"error": "reward_not_found"},
+    )
+
+    response = client.get("/api/v1/public/token123/games/reward?session_token=session-a")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Reward not found for this session"

@@ -14,9 +14,8 @@ class Vote(Base):
         UniqueConstraint(
             "restaurant_id",
             "dish_id",
-            "session_id",
-            "vote_date",
-            name="uq_vote_daily_dish_session",
+            "session_token",
+            name="uq_vote_dish_session",
         ),
     )
 
@@ -24,6 +23,6 @@ class Vote(Base):
     restaurant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("restaurants.id"), nullable=False)
     table_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tables.id"), nullable=False)
     dish_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("dishes.id"), nullable=False)
-    session_id: Mapped[str] = mapped_column(nullable=False)
+    session_token: Mapped[str] = mapped_column(nullable=False)
     vote_date: Mapped[date] = mapped_column(Date, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

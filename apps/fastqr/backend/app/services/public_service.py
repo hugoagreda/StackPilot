@@ -1,22 +1,33 @@
 import uuid
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.category import Category
+from app.models.dish_score_override import DishScoreOverride
 from app.models.dish import Dish
 from app.models.feedback import Feedback
 from app.models.restaurant import Restaurant
+from app.models.restaurant_setting import RestaurantSetting
+from app.models.scoring_setting import ScoringSetting
 from app.models.table import Table
+from app.models.table_access_session import TableAccessSession
 from app.models.vote import Vote
 
 
-def _normalize_session_id(session_id: str) -> str:
-    normalized = session_id.strip()
+def _as_utc(dt: datetime) -> datetime:
+    # SQLite can return naive datetimes even when the column is timezone-aware.
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _normalize_session_token(session_token: str) -> str:
+    normalized = session_token.strip()
     if not normalized:
-        raise ValueError("Invalid session_id")
+        raise ValueError("Invalid session_token")
     return normalized
 
 
@@ -39,12 +50,82 @@ def get_table_and_restaurant_by_qr(db: Session, qr_token: str) -> tuple[Table, R
     return result[0], result[1]
 
 
-def get_menu_by_qr(db: Session, qr_token: str) -> dict | None:
+def _get_restaurant_feature_settings(db: Session, restaurant_id: uuid.UUID) -> dict:
+    if not hasattr(db, "execute"):
+        return {
+            "allow_menu": True,
+            "allow_votes": True,
+            "allow_feedback": True,
+            "allow_games": True,
+        }
+
+    stmt = select(RestaurantSetting).where(RestaurantSetting.restaurant_id == restaurant_id)
+    setting = db.execute(stmt).scalar_one_or_none()
+    if setting is None:
+        return {
+            "allow_menu": True,
+            "allow_votes": True,
+            "allow_feedback": True,
+            "allow_games": True,
+        }
+    return {
+        "allow_menu": setting.allow_menu,
+        "allow_votes": setting.allow_votes,
+        "allow_feedback": setting.allow_feedback,
+        "allow_games": setting.allow_games,
+    }
+
+
+def _enforce_table_access_policy(db: Session, table: Table, session_token: str | None) -> None:
+    if not table.is_enabled:
+        raise ValueError("Table QR is currently disabled")
+
+    cooldown_minutes = max(int(table.scan_cooldown_minutes or 0), 0)
+    if cooldown_minutes == 0:
+        return
+
+    if session_token is None:
+        raise ValueError("session_token is required for table access policy")
+
+    normalized_session_token = _normalize_session_token(session_token)
+    stmt = select(TableAccessSession).where(
+        TableAccessSession.table_id == table.id,
+        TableAccessSession.session_token == normalized_session_token,
+    )
+    access_session = db.execute(stmt).scalar_one_or_none()
+
+    now = datetime.now(timezone.utc)
+    if access_session is None:
+        db.add(
+            TableAccessSession(
+                table_id=table.id,
+                session_token=normalized_session_token,
+                last_access_at=now,
+            )
+        )
+        db.commit()
+        return
+
+    cooldown_until = _as_utc(access_session.last_access_at) + timedelta(minutes=cooldown_minutes)
+    if now < cooldown_until:
+        remaining = int((cooldown_until - now).total_seconds() // 60) + 1
+        raise ValueError(f"Table access cooldown active, retry in {remaining} minute(s)")
+
+    access_session.last_access_at = now
+    db.commit()
+
+
+def get_menu_by_qr(db: Session, qr_token: str, session_token: str | None = None) -> dict | None:
     table_restaurant = get_table_and_restaurant_by_qr(db, qr_token)
     if table_restaurant is None:
         return None
 
     table, restaurant = table_restaurant
+    settings = _get_restaurant_feature_settings(db, restaurant.id)
+    if not settings["allow_menu"]:
+        return {"error": "feature_disabled", "feature": "menu"}
+
+    _enforce_table_access_policy(db, table, session_token)
 
     categories_stmt = (
         select(Category)
@@ -55,7 +136,7 @@ def get_menu_by_qr(db: Session, qr_token: str) -> dict | None:
 
     dishes_stmt = (
         select(Dish)
-        .where(Dish.restaurant_id == restaurant.id, Dish.is_active.is_(True))
+        .where(Dish.restaurant_id == restaurant.id, Dish.is_available.is_(True))
         .order_by(Dish.name.asc())
     )
     dishes = db.execute(dishes_stmt).scalars().all()
@@ -89,13 +170,17 @@ def get_menu_by_qr(db: Session, qr_token: str) -> dict | None:
     }
 
 
-def create_vote(db: Session, qr_token: str, dish_id: str, session_id: str) -> dict | None:
+def create_vote(db: Session, qr_token: str, dish_id: str, session_token: str) -> dict | None:
     table_restaurant = get_table_and_restaurant_by_qr(db, qr_token)
     if table_restaurant is None:
         return None
 
     table, restaurant = table_restaurant
-    normalized_session_id = _normalize_session_id(session_id)
+    settings = _get_restaurant_feature_settings(db, restaurant.id)
+    if not settings["allow_votes"]:
+        return {"error": "feature_disabled", "feature": "votes"}
+
+    normalized_session_token = _normalize_session_token(session_token)
 
     try:
         dish_uuid = uuid.UUID(dish_id)
@@ -104,7 +189,7 @@ def create_vote(db: Session, qr_token: str, dish_id: str, session_id: str) -> di
 
     dish_stmt = (
         select(Dish)
-        .where(Dish.id == dish_uuid, Dish.restaurant_id == restaurant.id, Dish.is_active.is_(True))
+        .where(Dish.id == dish_uuid, Dish.restaurant_id == restaurant.id, Dish.is_available.is_(True))
     )
     dish = db.execute(dish_stmt).scalar_one_or_none()
     if dish is None:
@@ -113,18 +198,17 @@ def create_vote(db: Session, qr_token: str, dish_id: str, session_id: str) -> di
     existing_stmt = select(Vote).where(
         Vote.restaurant_id == restaurant.id,
         Vote.dish_id == dish.id,
-        Vote.session_id == normalized_session_id,
-        Vote.vote_date == date.today(),
+        Vote.session_token == normalized_session_token,
     )
     existing_vote = db.execute(existing_stmt).scalar_one_or_none()
     if existing_vote is not None:
-        return {"status": "ignored", "reason": "already_voted_today", "dish_id": dish_id}
+        return {"status": "ignored", "reason": "already_voted", "dish_id": dish_id}
 
     vote = Vote(
         restaurant_id=restaurant.id,
         table_id=table.id,
         dish_id=dish.id,
-        session_id=normalized_session_id,
+        session_token=normalized_session_token,
         vote_date=date.today(),
     )
     db.add(vote)
@@ -133,13 +217,23 @@ def create_vote(db: Session, qr_token: str, dish_id: str, session_id: str) -> di
     return {"status": "recorded", "dish_id": dish_id, "vote_date": str(vote.vote_date)}
 
 
-def create_feedback(db: Session, qr_token: str, rating: int, comment: str | None, session_id: str) -> dict | None:
+def create_feedback(
+    db: Session,
+    qr_token: str,
+    rating: int,
+    comment: str | None,
+    session_token: str,
+) -> dict | None:
     table_restaurant = get_table_and_restaurant_by_qr(db, qr_token)
     if table_restaurant is None:
         return None
 
     table, restaurant = table_restaurant
-    normalized_session_id = _normalize_session_id(session_id)
+    settings = _get_restaurant_feature_settings(db, restaurant.id)
+    if not settings["allow_feedback"]:
+        return {"error": "feature_disabled", "feature": "feedback"}
+
+    normalized_session_token = _normalize_session_token(session_token)
     normalized_comment = _normalize_comment(comment)
 
     feedback = Feedback(
@@ -147,7 +241,7 @@ def create_feedback(db: Session, qr_token: str, rating: int, comment: str | None
         table_id=table.id,
         rating=rating,
         comment=normalized_comment,
-        session_id=normalized_session_id,
+        session_id=normalized_session_token,
     )
     db.add(feedback)
     db.commit()
@@ -161,22 +255,63 @@ def get_today_ranking(db: Session, qr_token: str) -> dict | None:
         return None
 
     _, restaurant = table_restaurant
+    return _build_today_ranking_for_restaurant(db, restaurant.id)
+
+
+def get_today_ranking_by_restaurant_id(db: Session, restaurant_id: str) -> dict:
+    try:
+        restaurant_uuid = uuid.UUID(restaurant_id)
+    except ValueError as exc:
+        raise ValueError("Invalid restaurant_id format") from exc
+
+    return _build_today_ranking_for_restaurant(db, restaurant_uuid)
+
+
+def _build_today_ranking_for_restaurant(db: Session, restaurant_id: uuid.UUID) -> dict:
+
+    today = date.today()
+    setting_stmt = select(ScoringSetting).where(ScoringSetting.restaurant_id == restaurant_id)
+    scoring_setting = db.execute(setting_stmt).scalar_one_or_none()
+    vote_points = scoring_setting.vote_points if scoring_setting is not None else 1
 
     ranking_stmt = (
-        select(Dish.id, Dish.name, func.count(Vote.id).label("votes"))
+        select(
+            Dish.id,
+            Dish.name,
+            func.count(Vote.id).label("votes"),
+            func.coalesce(func.max(DishScoreOverride.bonus_points), 0).label("bonus_points"),
+        )
         .join(Vote, Vote.dish_id == Dish.id)
-        .where(Vote.restaurant_id == restaurant.id, Vote.vote_date == date.today())
+        .outerjoin(
+            DishScoreOverride,
+            (
+                (DishScoreOverride.dish_id == Dish.id)
+                & (DishScoreOverride.restaurant_id == restaurant_id)
+                & (DishScoreOverride.score_date == today)
+            ),
+        )
+        .where(Vote.restaurant_id == restaurant_id, Vote.vote_date == today)
         .group_by(Dish.id, Dish.name)
-        .order_by(func.count(Vote.id).desc(), Dish.name.asc())
-        .limit(10)
+        .limit(50)
     )
 
     ranking_rows = db.execute(ranking_stmt).all()
 
+    ranking_rows_with_score = [
+        {
+            "dish_id": str(row.id),
+            "dish_name": row.name,
+            "votes": int(row.votes),
+            "vote_points": int(vote_points),
+            "bonus_points": int(row.bonus_points),
+            "score": int(row.votes) * int(vote_points) + int(row.bonus_points),
+        }
+        for row in ranking_rows
+    ]
+
+    ranking_rows_with_score.sort(key=lambda item: (-item["score"], item["dish_name"]))
+
     return {
-        "date": str(date.today()),
-        "ranking": [
-            {"dish_id": str(row.id), "dish_name": row.name, "votes": row.votes}
-            for row in ranking_rows
-        ],
+        "date": str(today),
+        "ranking": ranking_rows_with_score[:10],
     }

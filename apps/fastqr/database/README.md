@@ -1,42 +1,56 @@
-# FastQR Database (Supabase)
+# FastQR Database
 
-This folder contains SQL artifacts for the FastQR MVP database on Supabase Postgres.
+SQL del MVP FastQR.
 
-## Files
+## Que hace cada archivo
 
-- migrations/001_init_fastqr.sql: initial migration (DDL)
-- schema.sql: consolidated schema snapshot
-- seed.sql: minimal seed data for local/demo tests
+- `migrations/001_init_fastqr.sql`
+	Crea tablas e indices iniciales del proyecto.
+- `schema.sql`
+	Snapshot de referencia del esquema completo.
+- `seed.sql`
+	Datos demo minimos (restaurante, categorias, platos, mesas y tokens QR).
 
-## Supabase setup
+## Inicializacion recomendada
 
-1. Create a new Supabase project.
-2. Open SQL Editor.
-3. Run migrations/001_init_fastqr.sql.
-4. Run seed.sql (optional but recommended for MVP tests).
+1. Crear base de datos Postgres (local o Supabase).
+2. Ejecutar migracion inicial.
+3. Ejecutar seed demo.
 
-## Backend connection
+En Supabase SQL Editor:
 
-Set FASTQR_DATABASE_URL in backend environment:
+1. Ejecuta `migrations/001_init_fastqr.sql`.
+2. Ejecuta `seed.sql`.
 
-postgresql+psycopg://postgres:[YOUR_DB_PASSWORD]@db.[YOUR_PROJECT_REF].supabase.co:5432/postgres?sslmode=require
+## Conexion desde backend
 
-Example .env entry for backend:
+Define `FASTQR_DATABASE_URL` en el entorno del backend.
 
-FASTQR_DATABASE_URL=postgresql+psycopg://postgres:YOUR_PASSWORD@db.YOUR_PROJECT_REF.supabase.co:5432/postgres?sslmode=require
+Formato:
 
-## Quick verification queries
+```text
+postgresql+psycopg://postgres:YOUR_PASSWORD@db.YOUR_PROJECT_REF.supabase.co:5432/postgres?sslmode=require
+```
 
+## Verificacion rapida
+
+```sql
 select count(*) from restaurants;
 select count(*) from tables;
 select count(*) from categories;
 select count(*) from dishes;
+```
 
-## Seed test tokens
+## Tokens QR demo del seed
 
-- demo-token-t1
-- demo-token-t2
+- `demo-token-t1`
+- `demo-token-t2`
 
-Use these tokens against public endpoints, for example:
+Ejemplo de prueba API:
 
-GET /api/v1/public/demo-token-t1/menu
+`GET /api/v1/public/demo-token-t1/menu`
+
+## Nota de login dashboard
+
+`seed.sql` no crea usuarios en tabla `users`.
+Para entrar al dashboard, crea un usuario valido antes de usar `/login`.

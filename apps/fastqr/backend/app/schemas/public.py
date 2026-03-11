@@ -1,15 +1,25 @@
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 
 class VoteRequest(BaseModel):
     dish_id: str = Field(..., description="UUID del plato")
-    session_id: str = Field(..., min_length=1, max_length=120)
+    session_token: str = Field(
+        ...,
+        min_length=1,
+        max_length=120,
+        validation_alias=AliasChoices("session_token", "session_id"),
+    )
 
 
 class FeedbackRequest(BaseModel):
     rating: int = Field(..., ge=1, le=5)
     comment: str | None = Field(default=None, max_length=800)
-    session_id: str = Field(..., min_length=1, max_length=120)
+    session_token: str = Field(
+        ...,
+        min_length=1,
+        max_length=120,
+        validation_alias=AliasChoices("session_token", "session_id"),
+    )
 
 
 class MenuDish(BaseModel):

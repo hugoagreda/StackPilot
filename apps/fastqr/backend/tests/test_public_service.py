@@ -55,7 +55,7 @@ def test_create_feedback_converts_blank_comment_to_none(monkeypatch):
     assert saved_feedback.comment is None
 
 
-def test_create_feedback_rejects_blank_session_id(monkeypatch):
+def test_create_feedback_rejects_blank_session_token(monkeypatch):
     fake_db = FakeDb()
     table = SimpleNamespace(id=uuid.uuid4())
     restaurant = SimpleNamespace(id=uuid.uuid4())
@@ -68,9 +68,9 @@ def test_create_feedback_rejects_blank_session_id(monkeypatch):
 
     try:
         public_service.create_feedback(fake_db, "token123", 5, "ok", "   ")
-        assert False, "Expected ValueError for blank session_id"
+        assert False, "Expected ValueError for blank session_token"
     except ValueError as exc:
-        assert str(exc) == "Invalid session_id"
+        assert str(exc) == "Invalid session_token"
 
     assert fake_db.committed is False
     assert fake_db.added == []

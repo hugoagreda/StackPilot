@@ -1,47 +1,69 @@
 # FastQR Backend (FastAPI)
 
-MVP-oriented modular structure:
-- `routes/`: HTTP layer
-- `services/`: business rules
-- `models/`: SQLAlchemy entities
-- `schemas/`: Pydantic DTOs
-- `utils/`: helpers (QR, time, security)
+API del MVP FastQR.
 
-## Checkpoint tests
+## Que hace cada carpeta
 
-Run from workspace root:
+- `app/routes/`
+	Define endpoints HTTP (`/api/v1/...`) y validaciones de entrada/salida.
+- `app/services/`
+	Contiene la logica de negocio (votos, ranking, platos, mesas, auth).
+- `app/models/`
+	Modelos SQLAlchemy conectados a tablas de base de datos.
+- `app/schemas/`
+	DTOs Pydantic para requests/responses.
+- `app/utils/`
+	Helpers comunes (JWT, hash de password, auth helpers).
 
-```bash
-.venv\\Scripts\\python.exe -m pip install -r requirements.txt
-.venv\\Scripts\\python.exe -m pytest -q apps/fastqr/backend/tests
+## Endpoints principales
+
+Public (cliente):
+- `GET /api/v1/public/{qr_token}/menu`
+- `POST /api/v1/public/{qr_token}/votes`
+- `POST /api/v1/public/{qr_token}/feedback`
+- `GET /api/v1/public/{qr_token}/ranking/today`
+
+Auth:
+- `POST /api/v1/auth/login`
+- `GET /api/v1/auth/me`
+
+Dashboard (requiere JWT):
+- `GET /api/v1/dashboard/restaurants/{restaurant_id}/overview`
+- `GET /api/v1/dashboard/restaurants/{restaurant_id}/categories`
+- `POST /api/v1/dashboard/restaurants/{restaurant_id}/categories`
+- `GET /api/v1/dashboard/restaurants/{restaurant_id}/dishes`
+- `POST /api/v1/dashboard/restaurants/{restaurant_id}/dishes`
+- `PATCH /api/v1/dashboard/restaurants/{restaurant_id}/dishes/{dish_id}`
+- `GET /api/v1/dashboard/restaurants/{restaurant_id}/tables`
+- `POST /api/v1/dashboard/restaurants/{restaurant_id}/tables`
+
+## Levantar backend local
+
+Desde la raiz del workspace:
+
+```powershell
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir apps/fastqr/backend --reload --host 0.0.0.0 --port 8000
 ```
 
-Current checkpoint suite validates:
-- app root and health endpoints
-- public menu, votes, feedback, and ranking route behavior
-- dashboard overview route behavior
+Health check:
 
-## Supabase setup (database)
-
-1. Copy `.env.example` (workspace root) to `apps/fastqr/backend/.env`.
-2. Set `FASTQR_DATABASE_URL` with your Supabase project reference and password.
-	- Format: `postgresql+psycopg://postgres:YOUR_PASSWORD@db.YOUR_PROJECT_REF.supabase.co:5432/postgres?sslmode=require`
-3. In Supabase SQL Editor, run:
-	- `apps/fastqr/database/migrations/001_init_fastqr.sql`
-	- `apps/fastqr/database/seed.sql`
-
-## Run API locally
-
-From workspace root:
-
-```bash
-.venv\\Scripts\\python.exe -m uvicorn app.main:app --app-dir apps/fastqr/backend --reload --host 0.0.0.0 --port 8000
+```powershell
+curl http://localhost:8000/api/v1/health
 ```
 
-## Quick endpoint check
+## Tests backend
 
-With seed data loaded, test menu endpoint:
-
-```bash
-curl http://localhost:8000/api/v1/public/demo-token-t1/menu
+```powershell
+.venv\Scripts\python.exe -m pytest -q apps/fastqr/backend/tests
 ```
+
+## Configuracion de base de datos
+
+Variables esperadas en entorno del backend:
+- `FASTQR_DATABASE_URL`
+- `FASTQR_JWT_SECRET`
+- `FASTQR_JWT_ALGORITHM` (opcional, default `HS256`)
+- `FASTQR_JWT_EXPIRE_MINUTES` (opcional)
+
+Para detalles de SQL, revisa `../database/README.md`.
