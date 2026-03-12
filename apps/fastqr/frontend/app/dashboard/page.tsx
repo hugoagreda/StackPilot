@@ -50,85 +50,94 @@ export default function DashboardPage() {
   return (
     <main className="stack-lg">
 
-      <header className="card">
-        <h1 style={{ margin: 0, fontSize: 26 }}>Dashboard</h1>
+      <div>
+        <h1>Dashboard</h1>
+        <p className="muted">Resumen de interacción de tu restaurante.</p>
+      </div>
 
-        <p className="muted" style={{ marginTop: 6 }}>
-          Resumen de interacción de tu restaurante.
-        </p>
-      </header>
+      {loading && (
+        <div className="card" style={{ textAlign: 'center', padding: '40px' }}>
+          <p className="muted">Cargando métricas...</p>
+        </div>
+      )}
 
-      <section className="grid-2">
-        {cards.map((card) => (
-          <article
-            key={card.label}
-            className="card"
-            style={{
-              padding: 20,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 4,
-            }}
-          >
-            <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-              {card.label}
+      {!loading && (
+        <>
+          <section className="grid-2">
+            {cards.map((card) => (
+              <article
+                key={card.label}
+                className="card"
+                style={{
+                  padding: 24,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <p className="text-sm muted" style={{ margin: 0 }}>
+                  {card.label}
+                </p>
+
+                <p
+                  style={{
+                    margin: '8px 0 0 0',
+                    fontSize: 36,
+                    fontWeight: 700,
+                    color: 'var(--primary)',
+                  }}
+                >
+                  {card.value}
+                </p>
+              </article>
+            ))}
+          </section>
+
+          <section className="card">
+            <h2>API Configuration</h2>
+            <p className="muted" style={{ marginBottom: 24 }}>
+              Configura las credenciales del restaurante para acceder al dashboard.
             </p>
 
-            <p
-              style={{
-                margin: 0,
-                fontSize: 32,
-                fontWeight: 700,
-              }}
-            >
-              {card.value}
-            </p>
-          </article>
-        ))}
-      </section>
+            <div className="grid-2" style={{ marginBottom: 24 }}>
+              <div>
+                <label htmlFor="restaurantId" style={{ display: 'block', marginBottom: 8, fontSize: 14, fontWeight: 500 }}>
+                  Restaurant ID
+                </label>
+                <input
+                  id="restaurantId"
+                  className="input"
+                  value={restaurantId}
+                  onChange={(e) => setRestaurantId(e.target.value)}
+                  placeholder="uuid del restaurante"
+                />
+              </div>
 
-      <section className="card">
-        <h2 style={{ marginTop: 0 }}>API configuration</h2>
+              <div>
+                <label htmlFor="token" style={{ display: 'block', marginBottom: 8, fontSize: 14, fontWeight: 500 }}>
+                  JWT Token
+                </label>
+                <input
+                  id="token"
+                  className="input"
+                  value={token}
+                  onChange={(e) => setToken(e.target.value)}
+                  placeholder="token para Authorization"
+                />
+              </div>
+            </div>
 
-        <p className="muted">
-          Configura las credenciales del restaurante para acceder al dashboard.
-        </p>
-
-        <div className="grid-2">
-          <div>
-            <label htmlFor="restaurantId">Restaurant ID</label>
-            <input
-              id="restaurantId"
-              className="input"
-              value={restaurantId}
-              onChange={(e) => setRestaurantId(e.target.value)}
-              placeholder="uuid del restaurante"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="token">JWT token</label>
-            <input
-              id="token"
-              className="input"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              placeholder="token para Authorization"
-            />
-          </div>
-        </div>
-
-        <div style={{ marginTop: 14 }}>
-          <button className="btn btn-primary" onClick={saveLocalConfig}>
-            Guardar configuración
-          </button>
-        </div>
-      </section>
-
-      {loading && <p className="muted">Cargando métricas...</p>}
+            <button className="btn btn-primary" onClick={saveLocalConfig}>
+              Guardar configuración
+            </button>
+          </section>
+        </>
+      )}
 
       {error && (
-        <p style={{ color: 'var(--danger)', margin: 0 }}>{error}</p>
+        <div className="card" style={{ padding: 24, backgroundColor: 'var(--danger-light)', border: '1px solid var(--danger)' }}>
+          <p style={{ margin: 0, color: 'var(--danger)', fontWeight: 500 }}>{error}</p>
+        </div>
       )}
 
     </main>

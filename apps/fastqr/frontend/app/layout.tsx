@@ -19,6 +19,9 @@ export default function RootLayout({
           style={{
             borderBottom: '1px solid var(--line)',
             background: 'var(--surface)',
+            position: 'sticky',
+            top: 0,
+            zIndex: 50,
           }}
         >
           <div
@@ -27,33 +30,60 @@ export default function RootLayout({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              padding: '14px 0',
-              fontWeight: 600,
+              padding: '16px 0',
             }}
           >
-            <span>FastQR</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{
+                width: 32,
+                height: 32,
+                background: 'linear-gradient(135deg, var(--primary), var(--primary-hover))',
+                borderRadius: 'var(--radius)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'white',
+                fontWeight: 700,
+                fontSize: 16,
+              }}>
+                QR
+              </div>
+              <span style={{ fontWeight: 600, color: 'var(--text)' }}>FastQR</span>
+            </div>
 
-            <nav style={{ display: 'flex', gap: 14 }}>
-              <a className="muted" href="/">
+            <nav style={{ display: 'flex', gap: 24 }}>
+              <a 
+                className="muted" 
+                href="/" 
+                style={{ textDecoration: 'none', transition: 'color 0.2s ease', fontSize: 14 }}
+                onMouseOver={(e) => (e.currentTarget.style.color = 'var(--text)')}
+                onMouseOut={(e) => (e.currentTarget.style.color = 'var(--text-secondary)')}
+              >
                 Inicio
               </a>
 
-              <a className="muted" href="/dashboard">
+              <a 
+                className="muted" 
+                href="/dashboard" 
+                style={{ textDecoration: 'none', transition: 'color 0.2s ease', fontSize: 14 }}
+                onMouseOver={(e) => (e.currentTarget.style.color = 'var(--text)')}
+                onMouseOut={(e) => (e.currentTarget.style.color = 'var(--text-secondary)')}
+              >
                 Dashboard
               </a>
             </nav>
           </div>
         </header>
 
-        <main
+        <div
           className="shell"
           style={{
-            paddingTop: 32,
-            paddingBottom: 40,
+            paddingTop: 40,
+            paddingBottom: 60,
           }}
         >
           {children}
-        </main>
+        </div>
 
       </body>
     </html>

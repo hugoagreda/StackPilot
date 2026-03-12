@@ -128,80 +128,88 @@ export default function DashboardDishesPage() {
 
   return (
     <section className="stack-lg">
-  {categories.map((category) => {
-    const categoryDishes = dishesByCategory.get(category.id) ?? []
+      {categories.map((category) => {
+        const categoryDishes = dishesByCategory.get(category.id) ?? []
 
-    return (
-      <article key={category.id} className="card">
-        <header style={{ marginBottom: 12 }}>
-          <h3 style={{ margin: 0, fontSize: 18 }}>
-            {category.name}
-          </h3>
-        </header>
+        return (
+          <article key={category.id} className="card">
+            <header style={{ marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid var(--line)' }}>
+              <h2 style={{ margin: 0, color: 'var(--text)' }}>
+                {category.name}
+              </h2>
+            </header>
 
-        {categoryDishes.length === 0 ? (
-          <p className="muted">No hay platos en esta categoria.</p>
-        ) : (
-          <div className="stack">
-            {categoryDishes.map((dish) => (
-              <div
-                key={dish.id}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '10px 0',
-                  borderTop: '1px solid var(--line)',
-                }}
-              >
-                <div>
-                  <p style={{ margin: 0, fontWeight: 600 }}>
-                    {dish.name}
-                  </p>
-
-                  <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-                    {(dish.price_cents / 100).toLocaleString('es-ES', {
-                      style: 'currency',
-                      currency: 'EUR',
-                    })}
-                  </p>
-                </div>
-
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button
-                    onClick={() => {
-                      setEditingDishId(dish.id)
-
-                      setForm({
-                        name: dish.name,
-                        description: dish.description ?? '',
-                        price: (dish.price_cents / 100).toString(),
-                        category_id: dish.category_id,
-                        image_url: dish.image_url ?? '',
-                        is_available: dish.is_available,
-                      })
+            {categoryDishes.length === 0 ? (
+              <p className="muted" style={{ textAlign: 'center', padding: '20px 0', margin: 0 }}>
+                No hay platos en esta categoría.
+              </p>
+            ) : (
+              <div className="stack-lg">
+                {categoryDishes.map((dish) => (
+                  <div
+                    key={dish.id}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-start',
+                      padding: '16px 0',
+                      borderBottom: '1px solid var(--line-light)',
                     }}
-                    className="btn btn-soft"
                   >
-                    Editar
-                  </button>
+                    <div style={{ flex: 1 }}>
+                      <p style={{ margin: 0, fontWeight: 600, fontSize: 15, color: 'var(--text)' }}>
+                        {dish.name}
+                      </p>
 
-                  <button
-                    onClick={() => toggleAvailability(dish)}
-                    className={`btn ${
-                      dish.is_available ? 'btn-danger' : 'btn-soft'
-                    }`}
-                  >
-                    {dish.is_available ? 'Desactivar' : 'Activar'}
-                  </button>
-                </div>
+                      {dish.description && (
+                        <p className="text-sm muted" style={{ margin: '4px 0 0 0' }}>
+                          {dish.description}
+                        </p>
+                      )}
+
+                      <p className="text-sm" style={{ margin: '8px 0 0 0', color: 'var(--primary)', fontWeight: 600 }}>
+                        {(dish.price_cents / 100).toLocaleString('es-ES', {
+                          style: 'currency',
+                          currency: 'EUR',
+                        })}
+                      </p>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 12, marginLeft: 16, flexShrink: 0 }}>
+                      <button
+                        onClick={() => {
+                          setEditingDishId(dish.id)
+
+                          setForm({
+                            name: dish.name,
+                            description: dish.description ?? '',
+                            price: (dish.price_cents / 100).toString(),
+                            category_id: dish.category_id,
+                            image_url: dish.image_url ?? '',
+                            is_available: dish.is_available,
+                          })
+                        }}
+                        className="btn btn-soft"
+                      >
+                        Editar
+                      </button>
+
+                      <button
+                        onClick={() => toggleAvailability(dish)}
+                        className={`btn ${
+                          dish.is_available ? 'btn-danger' : 'btn-ok'
+                        }`}
+                      >
+                        {dish.is_available ? 'Desactivar' : 'Activar'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        )}
-      </article>
-    )
-  })}
-</section>
+            )}
+          </article>
+        )
+      })}
+    </section>
   )
 }
